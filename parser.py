@@ -22,7 +22,7 @@ class Building:
 
         diffX = maxX - minX
         diffY = maxY - minY
-        # Is building taller in X dimension than Y?
+        # Is building taller in Y dimension than X?
         self.isVertical =  diffY > diffX
 
         # Northernmost, easternmost, southernmost, westernmost node.
@@ -34,31 +34,29 @@ class Building:
             if y == minY: yNodeMin = self.nodes[i]
             if y == maxY: yNodeMax = self.nodes[i]
 
-
-        # centreMidEast = [yNodeMax[0] + xNodeMax[0], yNodeMax[1] + xNodeMax[1]]
-        # centreMidWest = [yNodeMin[0] + xNodeMin[0], yNodeMin[1] + xNodeMin[1]]
+        # centreMidNorth is the average of the northernmost and westernmost point
+        # centreMidEast is the average of the easternmost and northernmost point
+        # TODO: convert all this shit to numpy
+        centreMidNorth= [(xNodeMin[0] + yNodeMax[0]) / 2, (xNodeMin[1] + yNodeMax[1]) / 2]
+        centreMidEast = [(yNodeMax[0] + xNodeMax[0]) / 2, (yNodeMax[1] + xNodeMax[1]) / 2]
+        centreMidSouth= [(xNodeMax[0] + yNodeMin[0]) / 2, (xNodeMax[1] + yNodeMin[1]) / 2]
+        centreMidWest = [(yNodeMin[0] + xNodeMin[0]) / 2, (yNodeMin[1] + xNodeMin[1]) / 2]
         # Find angle of the building, account for possibility of angle being 0.
         if maxX - yNodeMin[0] == 0 or yNodeMax[0] - minX == 0: 
             self.angle = 0
         else:
-            ang1 = degrees(atan((xNodeMax[1] - minY) / (maxX - yNodeMin[0])))
-            ang2 = degrees(atan((maxY - xNodeMin[1]) / (yNodeMax[0] - minX)))
-            self.angle = (ang1 + ang2)/2
-            # ang3 = degrees(atan(centreMid))
+            self.angle = degrees(atan( (centreMidEast[1]-centreMidWest[1]) / (centreMidEast[0]-centreMidWest[0]) ))
 
-        # Div by zero fix
-        # if self.angle == 0:
-        #     self.length = diffX if self.isVertical else diffY
-        #     self.width =  diffY if self.isVertical else diffX
-        # else:
-        #     sinTheta = sin(radians(self.angle))
-        #     cosTheta = cos(radians(self.angle))
-            
+        a = sqrt((centreMidEast[0]  - centreMidWest[0])**2   + (centreMidEast[1] - centreMidWest[1])**2)
+        b = sqrt((centreMidNorth[0] - centreMidSouth[0])**2 + (centreMidNorth[1] - centreMidSouth[1])**2)
+        self.width = b if self.isVertical else a
+        self.length = a if self.isVertical else b
+        self.area = self.length * self.width
         if self.OSM_id == '461749327':
             print("ok")
 
         #self.area = 
-        print("Created building at {0} at angle {1} and area of {2} with nodes: {3}".format(self.centre, self.angle, 15, self.nodes))
+        print("Created building at {0} at angle {1} and area of {2} with nodes: {3}".format(self.centre, self.angle, self.area, self.nodes))
         
 def find_nodes(branch, nodes={}):
     if branch.tag == 'node':
@@ -114,4 +112,5 @@ for building in buildings.keys():
     cenX = xSum / len(building_nodes)
     cenY = ySum / len(building_nodes)
     centroid = (xSum, ySum)
-    Building(building, np.asarray(building_nodes), np.asarray(centroid))
+    buildings[building] = {'nodes' : building_nodes}
+    Building(building, building_nodes, centroid)
