@@ -213,6 +213,8 @@ class Node:
 class Road:
     all_roads = []
     roads_hash = {}
+    unmatched_road_types = []
+    unmatched_road_surfaces = []
     def __init__(self, name, road_type, surface, nodes, uid, is_lit):
         self.name = name
         self.nodes = [nodes]
@@ -220,14 +222,15 @@ class Road:
         self.is_lit = is_lit
         self.buildings = []
 
-        PRIMARY_ROAD_TYPES =        ["primary", "primary_link", 'trunk', 'corridor']
+        MOTORWAY_ROAD_TYPES =       ['motorway', 'motorway_link']
+        PRIMARY_ROAD_TYPES =        ["primary", "primary_link", 'trunk', 'trunk_link', 'corridor']
         SECONDARY_ROAD_TYPES =      ["secondary", "secondary_link"]
         SERVICE_ROAD_TYPES =        ["service"]
         RESIDENTIAL_ROAD_TYPES =    ["residential", 'living_street']
         TERTIARY_ROAD_TYPES =       ["tertiary", "tertiary_link", 'unclassified']
         PATH_ROAD_TYPES =           ["pedestrian", "path", "steps", "bridleway", "track", "footway", "cycleway", "elevator"]
 
-        if road_type in PRIMARY_ROAD_TYPES:
+        if road_type in PRIMARY_ROAD_TYPES or road_type in MOTORWAY_ROAD_TYPES:
             self.road_type = "primary"
         elif road_type in SECONDARY_ROAD_TYPES:
             self.road_type = 'secondary'
@@ -240,7 +243,8 @@ class Road:
         elif road_type in PATH_ROAD_TYPES:
             self.road_type = 'path'
         else:
-            raise NameError("{} not matched to any road type".format(road_type))
+            self.road_type = 'secondary'
+            if road_type not in Road.unmatched_road_types: Road.unmatched_road_types.append(road_type)
 
         PAVED_ROAD_TYPES =  ["concrete", "paved", "paving_stones", "paved", "asphalt", 'resin bonded']
         DIRT_ROAD_TPYES =   ["dirt", "compacted"]
@@ -253,11 +257,12 @@ class Road:
         elif surface in GRAVEL_ROAD_TYPES:
             self.surface = "gravel"
         else:
-            raise NameError("{} not matched to any surface type".format(surface))
-        Road.all_roads.append(self)
+            self.surface = 'paved'
+            if surface not in Road.unmatched_road_surfaces: Road.unmatched_road_surfaces.append(surface)
 
         if self.name != "NOT_FOUND":
             Road.roads_hash[name] = self
+        Road.all_roads.append(self)
 
     def all_nodes(self):
         nodes = []
@@ -526,6 +531,9 @@ def convert_highway_lines(root):
     print("Unique road surfaces: {}".format(all_road_surfaces))
     print("All unique road types succesfully simplified.")
 
+    print("WARNING: The following road types are not defined and defaulted to 'secondary': {}".format(Road.unmatched_road_types))
+    print("WARNING: The following road surfaces are not defined and defaulted to 'paved': {}".format(Road.unmatched_road_surfaces))
+
 def convert_buildings(root):
     print("Converting buildings")
     buildings = [building for building in root if building.find(".//*[@k='building']") is not None and len(building.findall('nd')) > 1]
@@ -584,7 +592,7 @@ def convert_buildings(root):
         direction_deg_manual = degrees(direction_manual)
         if direction_deg_manual < 0: direction_deg_manual += 360
         # If building has an associated street or a nearby street, then find the tangent of the closest segment, else calculate it manually.
-        if building_street is 'none' or building_street not in Road.roads_hash.keys():
+        if building_street == 'none' or building_street not in Road.roads_hash.keys():
             distance, street_object = Road.find_nearest_road(centre, 15)
         else:
             street_object = Road.roads_hash[building_street]
@@ -608,13 +616,13 @@ def convert_buildings(root):
                 width, length = b, a
                 #directionDeg += 90
         else:
-            directionDeg = direction_deg_manual
+            direction_deg = direction_deg_manual
             width = width/1.41
             length = length/1.41
             if length > width:
                 a, b = width, length
                 width, length = b, a
-                directionDeg += 90
+                direction_deg += 90
         Building(centre, direction_deg, width, length, street_object, building_type, uid)
     print("WARNING: The following building types were not exactly matched: {}".format(Building.uses_not_exactly_matched))
 
