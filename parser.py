@@ -6,8 +6,21 @@ import time
 import numpy as np
 from PIL import Image, ImageDraw
 import ast
-
 EARTH_RADIUS = 6371000
+
+# ROAD TYPE DEFINITIONS
+MOTORWAY_ROAD_TYPES =       ['motorway', 'motorway_link']
+PRIMARY_ROAD_TYPES =        ["primary", "primary_link", 'trunk', 'trunk_link', 'corridor']
+SECONDARY_ROAD_TYPES =      ["secondary", "secondary_link"]
+SERVICE_ROAD_TYPES =        ["service"]
+RESIDENTIAL_ROAD_TYPES =    ["residential", 'living_street']
+TERTIARY_ROAD_TYPES =       ["tertiary", "tertiary_link", 'unclassified']
+PATH_ROAD_TYPES =           ["pedestrian", "path", "steps", "bridleway", "track", "footway", "cycleway", "elevator"]
+
+# ROAD SURFACE DEFINITIONS
+PAVED_ROAD_TYPES =  ["concrete", "paved", "paving_stones", "paved", "asphalt", 'resin bonded']
+DIRT_ROAD_TPYES =   ["dirt", "compacted"]
+GRAVEL_ROAD_TYPES = ["pebblestone", "gravel", "unpaved", "unhewn_cobblestone", "cobblestone"]
 
 class Progress_bar():
     def __init__(self, activity, count):#
@@ -16,28 +29,22 @@ class Progress_bar():
         self.i = -1
         self.barlength = 20
         self.last_update = time.time()-10
-        self.update_progress()
         print("")
+        self.update_progress()
+
+    # def print(self, string)
+    #     print(string)
+    #     print("")
 
     def update_progress(self):
         self.i += 1
         progress = self.i/self.count
         if self.last_update+1<time.time() or progress >= 1:
             self.last_update=time.time()
-            status = ""
-            if not isinstance(progress, float):
-                progress = 0
-                status = "error: progress var must be float\r\n"
-            if progress < 0:
-                progress = 0
-                status = "Halt...\r\n"
-            if progress >= 1:
-                progress = 1
-                status = "Done...\r\n"
             block = int(round(self.barlength*progress))
-            text = "{0}: [{1}] {2}% {3}".format(self.activity, "#"*block + "-"*(self.barlength-block), progress*100, status)
-            lineEnd = '\r' if progress<1 else '\n'
-            print(text, end='\r')
+            text = "{0}: [{1}] {2}%".format(self.activity, "#"*block + "-"*(self.barlength-block), round(progress*100))
+            lineEnd = '\r' if progress<1.0 else '\n\n'
+            print(text, end=lineEnd)
 
 class Arma_road:
     """
@@ -274,14 +281,6 @@ class Road:
         self.is_lit = is_lit
         self.buildings = []
 
-        MOTORWAY_ROAD_TYPES =       ['motorway', 'motorway_link']
-        PRIMARY_ROAD_TYPES =        ["primary", "primary_link", 'trunk', 'trunk_link', 'corridor']
-        SECONDARY_ROAD_TYPES =      ["secondary", "secondary_link"]
-        SERVICE_ROAD_TYPES =        ["service"]
-        RESIDENTIAL_ROAD_TYPES =    ["residential", 'living_street']
-        TERTIARY_ROAD_TYPES =       ["tertiary", "tertiary_link", 'unclassified']
-        PATH_ROAD_TYPES =           ["pedestrian", "path", "steps", "bridleway", "track", "footway", "cycleway", "elevator"]
-
         if road_type in PRIMARY_ROAD_TYPES or road_type in MOTORWAY_ROAD_TYPES:
             self.road_type = "primary"
         elif road_type in SECONDARY_ROAD_TYPES:
@@ -297,10 +296,6 @@ class Road:
         else:
             self.road_type = 'secondary'
             if road_type not in Road.unmatched_road_types: Road.unmatched_road_types.append(road_type)
-
-        PAVED_ROAD_TYPES =  ["concrete", "paved", "paving_stones", "paved", "asphalt", 'resin bonded']
-        DIRT_ROAD_TPYES =   ["dirt", "compacted"]
-        GRAVEL_ROAD_TYPES = ["pebblestone", "gravel", "unpaved", "unhewn_cobblestone", "cobblestone"]
 
         if surface in PAVED_ROAD_TYPES:
             self.surface = "paved"
@@ -602,6 +597,7 @@ def convert_highway_lines(root):
     print("WARNING: The following road surfaces are not defined and defaulted to 'paved': {}".format(Road.unmatched_road_surfaces))
 
 def convert_buildings(root):
+    # TODO: multithread this
     print("Converting buildings")
     buildings = [building for building in root if building.find(".//*[@k='building']") is not None and len(building.findall('nd')) > 1]
     print("Found {} buildings".format(len(buildings)))
@@ -618,9 +614,9 @@ def convert_buildings(root):
         else:
             building_use = building_type
         if building_use not in building_uses: building_uses.append(building_use)
-    print("Unique building types: {}".format(building_types))
-    print("Unique amenity types: {}".format(building_amenities))
-    print("Unique buildings uses: {}".format(building_uses))
+    # print("Unique building types: {}".format(building_types))
+    # print("Unique amenity types: {}".format(building_amenities))
+    # print("Unique buildings uses: {}".format(building_uses))
     
     progress_bar = Progress_bar("Converting buildings" ,len(buildings))
     for building in buildings:
@@ -676,7 +672,7 @@ def convert_buildings(root):
             width, length = b, a
         Building(centre, direction_deg, width, length, street_object, building_type, uid)
         progress_bar.update_progress()
-    print("WARNING: The following building types were not exactly matched: {}".format(Building.uses_not_exactly_matched))
+    print("WARNING: The following building types were not exactly matched and have defaulted to residential/commercial: {}".format(Building.uses_not_exactly_matched))
     print("Done converting buildings")
 
 def convert_amenity_nodes(root):
@@ -718,7 +714,7 @@ def debug_draw_image():
             min_y = min(node[1], min_y)
     diff_x = max_x-min_x
     diff_y = max_y-min_y
-    diff = min(diff_x, diff_y)
+    diff = max(diff_x, diff_y)
 
 
     def to_pixels(coords):
@@ -726,6 +722,7 @@ def debug_draw_image():
         pos_y =  max_y - coords[1]
         pixel_x = int(((pos_x/diff)*resolution))
         pixel_y = int((pos_y/diff)*resolution)
+        assert 0<=pixel_x<=resolution and 0<=pixel_y<=resolution
         return (pixel_x, pixel_y)
 
     def to_pixel(length):
