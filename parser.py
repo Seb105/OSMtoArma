@@ -324,7 +324,12 @@ class Road:
     def node_sets_as_coords(self):
         return [[node.coords for node in node_set] for node_set in self.nodes]
 
-    def get_road_direction(self, coords):
+    def get_direction_perp_to_road(self, coords):
+        """
+        This function returns the angle perpendicular to the tangent of the closest road section of the given coordinates. Used for aligning a property to the road.
+
+        TODO: Make it so the house faces the road, right now it only faces N/E
+        """
         # Find direction of two closest road points
         nodes = self.all_nodes_as_coords()
         vector_distances = nodes - coords
@@ -508,10 +513,6 @@ def pol2cart(angle, dist):
     y = dist * np.sin(angle)
     return np.asarray([x, y])
 
-# def direction_to(p1, p2):
-#     d = p2 - p1
-#     return np.arctan2(d[1], d[0])
-
 def get_dist(p1, p2):
     d = p2-p1
     return np.hypot(d[0], d[1])
@@ -652,8 +653,8 @@ def convert_buildings(root):
 
         # Is it near a road, if so then use that as direction, if not calculate manually
         if distance < 1.5*sqrt(diff_x**2+diff_y**2):
-            direction_deg = street_object.get_road_direction(centre)
-            # Rotate to face road
+            direction_deg = street_object.get_direction_perp_to_road(centre)
+            # TODO: make face road
         else:
             # Average the angles of all nodes that make up this building, return between 0-45 degrees.
             angles = []
