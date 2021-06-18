@@ -1,14 +1,19 @@
 from logging import error
 import xml.etree.ElementTree as ET
-from math import atan, degrees, radians, sin, sqrt, tan, cos, inf, ceil
+from math import atan, atan2, degrees, radians, sin, sqrt, tan, cos, inf, ceil
+from statistics import mean
 from time import time
 import numpy as np
-import scipy
+from PIL import Image, ImageDraw
 import ast
 
 EARTH_RADIUS = 6371000
 
 class Arma_road:
+    """
+    An arma road is a collection of arma road segment classes with some identifying properties such as segment length, turning radius and turning angle, 
+    
+    These segments may be used to convert an OSM way into arma classes."""
     arma_road_match = {}
     def __init__(self, road_surfaces, road_types, straights, curves, end, placeAtCentre=False):
         if isinstance(road_types, str): road_types = (road_types,)
@@ -143,12 +148,20 @@ def define_roads():
     "CUP_A2_Road_OA_path_6konec")
 
 class Arma_building:
+    """
+    An Arma building is the class representation of an actual arma building class.
+
+    It contains the data of that building such as width, length and height so that it may be matched to an OSM building.
+    """
     sizes = {}
+    all_classes = {}
     def __init__(self, arma_class, biome, width, length, height, structure_type):
         size_key = (width, length, biome)
         if size_key in Arma_building.sizes.keys():
             # This class will get garbage collected
-            Arma_building.sizes[size_key].arma_classes.append(arma_class)
+            existing_building = Arma_building.sizes[size_key]
+            existing_building.arma_classes.append(arma_class)
+            Arma_building.all_classes[arma_class] = existing_building
         else:
             self.width = width
             self.length = length
@@ -157,6 +170,7 @@ class Arma_building:
             self.biome = biome
             self.structure_type = structure_type
             Arma_building.sizes[size_key] = self
+            Arma_building.all_classes[arma_class] = self
 
             self.variety = 0
 
@@ -202,6 +216,9 @@ def covert_arma_buildings(path=r"input_data\armaObjects.txt"):
 
 
 class Node:
+    """
+    A node is a coordinate with a UID. OSM objects may or may not share nodes
+    """
     nodes_all = []
     nodes_hash = {}
     def __init__(self, uid, coords):
@@ -211,6 +228,11 @@ class Node:
         Node.nodes_hash[uid] = self
 
 class Road:
+    """
+    A Road object is an imported OSM road. 
+    It can be turned into a set of Arma objects using create_arma_objects(self), 
+    which uses the Arma_road class to find the correct segments for this road type.
+    """
     all_roads = []
     roads_hash = {}
     unmatched_road_types = []
@@ -277,17 +299,20 @@ class Road:
     def node_sets_as_coords(self):
         return [[node.coords for node in node_set] for node_set in self.nodes]
 
-    def get_road_tangent(self, coords):
-        # Find perpendicular direction of two closest road points
+    def get_road_direction(self, coords):
+        # Find direction of two closest road points
         nodes = self.all_nodes_as_coords()
         vector_distances = nodes - coords
         distances = np.asarray([np.hypot(point[0], point[1]) for point in vector_distances])
         sorted_distances = np.argsort(distances)
         nearest = vector_distances[sorted_distances[0]]
-        second_nearrest = vector_distances[sorted_distances[1]]
-        diff = second_nearrest - nearest
+        second_nearest = vector_distances[sorted_distances[1]]
+        #segment_centre = (nearest + second_nearest)/2
+        diff = second_nearest - nearest
         ____, angle = cart2pol(diff)
-        return angle
+        #dir_to_centre = atan2(segment_centre[1], segment_centre[0])
+        #offset = 180 if dir_to_centre > 0 else -180
+        return ((90-degrees(angle))%180) - 90
     
     @classmethod
     def find_nearest_road(Road, coords, close_enough=inf):
@@ -403,6 +428,11 @@ class Road:
         return arma_array
 
 class Building:
+    """
+    A building is an extracted OSM building object.
+    
+    It can be matched to an Arma_building using the match method from Arma_building.
+    """
     all_buildings = []
     uses_not_exactly_matched = []
     def __init__(self, centre, direction, width, length, road_object, building_type, uid):
@@ -437,6 +467,8 @@ class Building:
         
         if self.arma_class != None:
             Building.all_buildings.append(self)
+            self.actual_width = Arma_building.all_classes[self.arma_class].width
+            self.actual_length = Arma_building.all_classes[self.arma_class].length
 
     def create_arma_objects(self):
         return [self.arma_class, list(self.centre), self.direction]
@@ -554,7 +586,6 @@ def convert_buildings(root):
     print("Unique building types: {}".format(building_types))
     print("Unique amenity types: {}".format(building_amenities))
     print("Unique buildings uses: {}".format(building_uses))
-
     for building in buildings:
         uid = building.attrib['id']
         building_type = get_sub_object_attrib(building, 'building')
@@ -572,25 +603,11 @@ def convert_buildings(root):
         max_y = maxes[1]
         min_x = mins[0]
         min_y = mins[1]
-        # Get northernmost, easternmost, southernmost, westernmost points.
-        n = [p for p in nodes_coords if p[1] == max_y][0]
-        s = [p for p in nodes_coords if p[1] == min_y][0]
-        e = [p for p in nodes_coords if p[0] == max_x][0]
-        w = [p for p in nodes_coords if p[0] == min_x][0]
-
         diff_x = max_x - min_x
         diff_y = max_y - min_y
-        diff = ((n-e)+(s-w))/2
-        delta_x = diff[0]
-        delta_y = diff[1]
-        width = sqrt(delta_x**2 + (diff_y - delta_y)**2)
-        length = sqrt(delta_y**2 + (diff_x - delta_x)**2)
         centreX = (min_x + max_x)/2
         centreY = (min_y + max_y)/2
         centre = np.asarray([centreX, centreY])
-        direction_manual = np.arctan2(delta_y, delta_x)
-        direction_deg_manual = degrees(direction_manual)
-        if direction_deg_manual < 0: direction_deg_manual += 360
         # If building has an associated street or a nearby street, then find the tangent of the closest segment, else calculate it manually.
         if building_street == 'none' or building_street not in Road.roads_hash.keys():
             distance, street_object = Road.find_nearest_road(centre, 15)
@@ -599,34 +616,36 @@ def convert_buildings(root):
             vector_distances = street_object.all_nodes_as_coords() - centre
             distances = np.asarray([np.hypot(point[0], point[1]) for point in vector_distances])
             distance = np.min(distances)
-        if distance < 45:
-            direction = street_object.get_road_tangent(centre)
+
+        # Is it near a road, if so then use that as direction, if not calculate manually
+        if distance < 1.5*sqrt(diff_x**2+diff_y**2):
+            direction_deg = street_object.get_road_direction(centre)
             # Rotate to face road
-            direction_deg = 90 - degrees(direction) - 90
             if direction_deg < 0: direction_deg += 360
-            # Difference between the two disagreeing directions to nearest 90 deg
-            x = (direction_deg%90 + direction_deg_manual%90) % 90
-            disagreement = min(x, 90-x)
-            modifier = cos(radians(disagreement))
-            width = width * modifier
-            length = length * modifier
-            # If angle is east or west, then swap with and length
-            if 45>direction_deg<135 or 225>direction_deg<315:
-                a, b = width, length
-                width, length = b, a
-                #directionDeg += 90
         else:
-            direction_deg = direction_deg_manual
-            width = width/1.41
-            length = length/1.41
-            if length > width:
-                a, b = width, length
-                width, length = b, a
-                direction_deg += 90
+            # Average the angles of all nodes that make up this building, return between 0-45 degrees.
+            angles = []
+            for i, node in enumerate(nodes_coords[:-1]):
+                next_node = nodes_coords[i+1]
+                diff = next_node -  node
+                angle = np.arctan2(diff[0], diff[1])
+                angles.append(angle)
+            direction_deg = 90 - abs(degrees(mean(angles)))
+        direction_to_nearest_45_deg = min(90-direction_deg%90, direction_deg%90)
+        width = diff_x * (1-(direction_to_nearest_45_deg/90))
+        length = diff_y * (1-(direction_to_nearest_45_deg/90))
+        if 45<direction_deg<135 or 315>direction_deg>225:
+            a,b = width, length
+            width, length = b, a
         Building(centre, direction_deg, width, length, street_object, building_type, uid)
     print("WARNING: The following building types were not exactly matched: {}".format(Building.uses_not_exactly_matched))
+    print("Done converting buildings")
+
+def convert_amenity_nodes(root):
+    pass
 
 def output_all_to_arma_array():
+    print("Writing output")
     buildArray = []
     for road in Road.all_roads:
         buildArray.extend(road.create_arma_objects())
@@ -637,7 +656,73 @@ def output_all_to_arma_array():
     with open("output.sqf", 'w') as f:
         f.truncate()
         f.writelines([line.replace("[THE_BUILD_ARRAY]", str(buildArray)) for line in script])
+    print("Done writing output")
     
+def debug_draw_image():
+    print("Drawing preview")
+    resolution = 4000
+    max_x = 0
+    max_y = 0
+    min_x = inf
+    min_y = inf
+    for building in Building.all_buildings:
+        centre = building.centre
+        max_x = max(centre[0], max_x)
+        max_y = max(centre[1], max_y)
+        min_x = min(centre[0], min_x)
+        min_y = min(centre[1], min_y)
+    for road in Road.all_roads:
+        nodes = road.all_nodes_as_coords()
+        for node in nodes:
+            max_x = max(node[0], max_x)
+            max_y = max(node[1], max_y)
+            min_x = min(node[0], min_x)
+            min_y = min(node[1], min_y)
+    diff_x = max_x-min_x
+    diff_y = max_y-min_y
+    diff = min(diff_x, diff_y)
+
+
+    def to_pixels(coords):
+        pos_x = coords[0] - min_x
+        pos_y =  max_y - coords[1]
+        pixel_x = int(((pos_x/diff)*resolution))
+        pixel_y = int((pos_y/diff)*resolution)
+        return (pixel_x, pixel_y)
+
+    def to_pixel(length):
+        pixel_length = int((length/diff)*resolution)
+        return pixel_length
+    def make_rectangle(l, w, theta, offset=(0,0)):
+        c, s = cos(theta), sin(theta)
+        rectCoords = [(l/2.0, w/2.0), (l/2.0, -w/2.0), (-l/2.0, -w/2.0), (-l/2.0, w/2.0)]
+        return [(c*x-s*y+offset[0], s*x+c*y+offset[1]) for (x,y) in rectCoords]
+
+    img = Image.new('RGB', (resolution, resolution), color='black')
+    draw = ImageDraw.Draw(img, 'RGBA')
+    for road in Road.all_roads:
+        node_sets = road.node_sets_as_coords()
+        for node_set in node_sets:
+            as_tuples = tuple([tuple(to_pixels(node)) for node in node_set])
+            draw.line(as_tuples, fill='blue', width=1)
+    for building in Building.all_buildings:
+        centre = to_pixels(building.centre)
+        width = to_pixel(building.width)
+        length =  to_pixel(building.length)
+        direction = building.direction
+        vertices = make_rectangle(length, width, radians(direction+90), tuple(centre))
+        draw.polygon(vertices, fill=(255, 0, 0, 125), outline='black')
+    for building in Building.all_buildings:
+        centre = to_pixels(building.centre)
+        width = to_pixel(building.actual_width)
+        length =  to_pixel(building.actual_length)
+        direction = building.direction
+        vertices = make_rectangle(length, width, radians(direction+90), tuple(centre))
+        draw.polygon(vertices, fill=(0, 255, 0, 62), outline='black')
+    img.save("output.png")
+    print("Done drawing preview")
+
+
 
 def main():
     tree = ET.parse(r'xml\map.osm.xml')
@@ -648,6 +733,7 @@ def main():
     convert_highway_lines(root)
     convert_buildings(root)
     output_all_to_arma_array()
+    debug_draw_image()
     # with open("road_test.txt", 'w') as f:
     #     array = []
     #     for road in Road.all_roads:
