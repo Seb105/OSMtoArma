@@ -1,13 +1,43 @@
 from logging import error
 import xml.etree.ElementTree as ET
-from math import atan, atan2, degrees, radians, sin, sqrt, tan, cos, inf, ceil
+from math import atan, atan2, degrees, radians, sin, sqrt, cos, inf
 from statistics import mean
-from time import time
+import time
 import numpy as np
 from PIL import Image, ImageDraw
 import ast
 
 EARTH_RADIUS = 6371000
+
+class Progress_bar():
+    def __init__(self, activity, count):#
+        self.activity = activity
+        self.count = count
+        self.i = -1
+        self.barlength = 20
+        self.last_update = time.time()-10
+        self.update_progress()
+        print("")
+
+    def update_progress(self):
+        self.i += 1
+        progress = self.i/self.count
+        if self.last_update+1<time.time() or progress >= 1:
+            self.last_update=time.time()
+            status = ""
+            if not isinstance(progress, float):
+                progress = 0
+                status = "error: progress var must be float\r\n"
+            if progress < 0:
+                progress = 0
+                status = "Halt...\r\n"
+            if progress >= 1:
+                progress = 1
+                status = "Done...\r\n"
+            block = int(round(self.barlength*progress))
+            text = "{0}: [{1}] {2}% {3}".format(self.activity, "#"*block + "-"*(self.barlength-block), progress*100, status)
+            lineEnd = '\r' if progress<1 else '\n'
+            print(text, end='\r')
 
 class Arma_road:
     """
@@ -516,6 +546,7 @@ def get_sub_object_attrib(instance, attrib, default_value = "NOT_FOUND"):
         return default_value
 
 def convert_nodes(root):
+    print("Converting nodes")
     # Grab all nodes from the XML file and convert it to local x, y via equirectangular projection
     # https://en.wikipedia.org/wiki/Equirectangular_projection
     # Store it as a class acessible by the UID.
@@ -526,6 +557,7 @@ def convert_nodes(root):
     min_lat = radians(min_lat)
     min_lon = radians(min_lon)
     cos_standard_parallel = cos(min_lat)
+    progress_bar = Progress_bar("Converting nodes" ,len(nodes))
     for node in nodes:
         lat = radians(float(node.attrib['lat']))
         lon = radians(float(node.attrib['lon']))
@@ -533,6 +565,7 @@ def convert_nodes(root):
         y = EARTH_RADIUS*(lat - min_lat)
         coords = np.asarray([x, y])
         Node(node.attrib['id'], coords)
+        progress_bar.update_progress()
     print("Found {} nodes".format(len(Node.nodes_all)))
 
 def convert_highway_lines(root):
@@ -543,6 +576,7 @@ def convert_highway_lines(root):
     all_road_types = []
     all_road_surfaces = []
     print("Found {} highways".format(len(highways)))
+    progress_bar = Progress_bar("Converting highways" ,len(highways))
     for highway in highways:
         nodes = [Node.nodes_hash[node.attrib['ref']] for node in highway.findall("nd")]
         road_name = get_sub_object_attrib(highway, 'name')
@@ -558,6 +592,7 @@ def convert_highway_lines(root):
 
             if road_type not in all_road_types: all_road_types.append(road_type)
             if road_surface not in all_road_surfaces: all_road_surfaces.append(road_surface)
+        progress_bar.update_progress()
     print("Created {} unique roads. {} are unnamed. {} are named.".format(len(Road.all_roads), len(Road.all_roads) - len(Road.roads_hash), len(Road.roads_hash)))
     print("Unique road types: {}".format(all_road_types))
     print("Unique road surfaces: {}".format(all_road_surfaces))
@@ -586,6 +621,8 @@ def convert_buildings(root):
     print("Unique building types: {}".format(building_types))
     print("Unique amenity types: {}".format(building_amenities))
     print("Unique buildings uses: {}".format(building_uses))
+    
+    progress_bar = Progress_bar("Converting buildings" ,len(buildings))
     for building in buildings:
         uid = building.attrib['id']
         building_type = get_sub_object_attrib(building, 'building')
@@ -621,16 +658,16 @@ def convert_buildings(root):
         if distance < 1.5*sqrt(diff_x**2+diff_y**2):
             direction_deg = street_object.get_road_direction(centre)
             # Rotate to face road
-            if direction_deg < 0: direction_deg += 360
         else:
             # Average the angles of all nodes that make up this building, return between 0-45 degrees.
             angles = []
             for i, node in enumerate(nodes_coords[:-1]):
                 next_node = nodes_coords[i+1]
                 diff = next_node -  node
-                angle = np.arctan2(diff[0], diff[1])
+                angle = degrees(np.arctan2(diff[0], diff[1]))%90
                 angles.append(angle)
-            direction_deg = 90 - abs(degrees(mean(angles)))
+            direction_deg = mean(angles)
+        if direction_deg < 0: direction_deg += 360
         direction_to_nearest_45_deg = min(90-direction_deg%90, direction_deg%90)
         width = diff_x * (1-(direction_to_nearest_45_deg/90))
         length = diff_y * (1-(direction_to_nearest_45_deg/90))
@@ -638,6 +675,7 @@ def convert_buildings(root):
             a,b = width, length
             width, length = b, a
         Building(centre, direction_deg, width, length, street_object, building_type, uid)
+        progress_bar.update_progress()
     print("WARNING: The following building types were not exactly matched: {}".format(Building.uses_not_exactly_matched))
     print("Done converting buildings")
 
@@ -722,8 +760,6 @@ def debug_draw_image():
     img.save("output.png")
     print("Done drawing preview")
 
-
-
 def main():
     tree = ET.parse(r'xml\map.osm.xml')
     root = tree.getroot()
@@ -734,11 +770,6 @@ def main():
     convert_buildings(root)
     output_all_to_arma_array()
     debug_draw_image()
-    # with open("road_test.txt", 'w') as f:
-    #     array = []
-    #     for road in Road.all_roads:
-    #         array.extend(road.create_arma_objects())
-    #     f.write(str(array))
 
 if __name__ == "__main__":
     main()
