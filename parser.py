@@ -309,7 +309,7 @@ def main():
     define_roads()
     convert_nodes(root)
     convert_highway_lines(root)
-    #convert_node_objects(root)
+    convert_node_objects(root)
     convert_buildings(root)
     output_all_to_arma_array()
     debug_draw_image()
