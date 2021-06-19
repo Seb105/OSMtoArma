@@ -6,8 +6,9 @@ import time
 import numpy as np
 from PIL import Image, ImageDraw
 import ast
+import random
+random.seed(1)
 EARTH_RADIUS = 6371000
-
 # ROAD TYPE DEFINITIONS
 MOTORWAY_ROAD_TYPES =       ['motorway', 'motorway_link']
 PRIMARY_ROAD_TYPES =        ["primary", "primary_link", 'trunk', 'trunk_link', 'corridor']
@@ -21,6 +22,33 @@ PATH_ROAD_TYPES =           ["pedestrian", "path", "steps", "bridleway", "track"
 PAVED_ROAD_TYPES =  ["concrete", "paved", "paving_stones", "paved", "asphalt", 'resin bonded']
 DIRT_ROAD_TPYES =   ["dirt", "compacted"]
 GRAVEL_ROAD_TYPES = ["pebblestone", "gravel", "unpaved", "unhewn_cobblestone", "cobblestone"]
+
+# Single node lookup table
+NODE_OBJECT_TYPES = {
+    'tree' : ["CUP_les_dub", "CUP_les_dub_jiny", "CUP_t_quercus2f_summer", "CUP_t_betula2f_summer", "CUP_t_betula2s_summer"],
+    'bench' : "Land_Bench_01_F",
+    'post_box' : "Land_GasMeterCabinet_01_F", #eh
+    'waste_basket' : "Land_GarbageBin_02_F",
+    'telephone' : "Land_PhoneBooth_01_F",
+    'atm' : "Land_ATM_01_malden_F",
+    'statue' : ["Land_Maroula_F", "Land_Statue_02_F", "Land_Statue_01_F", "Land_Monument_01_F", "Land_Statue_03_F"],
+    "memorial" : ["Land_Grave_memorial_F", "Land_Pedestal_01_F"],
+    "bus_stop" : "Land_BusStop_01_shelter_F"
+}
+
+#Woods objets
+WOODS_OBJECT_TYPES = [
+    "CUP_les_dub",
+    "CUP_les_dub_jiny",
+    "CUP_t_quercus2f_summer",
+    "CUP_t_betula2f_summer",
+    "CUP_t_betula2s_summer",
+    "CUP_b_AmygdalusN1s_EP1",
+    "CUP_ker_s_bobulema",
+    "CUP_koprivy",
+    "CUP_ker_pichlavej",
+    "CUP_kmen_1_buk",
+]
 
 class Progress_bar():
     def __init__(self, activity, count):#
@@ -220,7 +248,7 @@ class Arma_building:
         for building in buildings:
             width = building.width
             length = building.length
-            if width>target_width or length>target_length: continue
+            if width*0.9>target_width or length>target_length: continue
             this_accuracy = 1/(abs(width-target_width)+abs(length-target_length))
             if this_accuracy > accuracy:
                 accuracy = this_accuracy
@@ -236,21 +264,20 @@ class Arma_building:
                 return_building.variety += 1
             return return_class
 
-def covert_arma_buildings(path=r"input_data\armaObjects.txt"):
+def define_arma_buildings(path=r"input_data\armaObjects.txt", biome_blacklist=[]):
     print("Converting arma buildings to classes")
     i = 0
     with open(path, 'r') as f:
         array_string = f.readline()
     objects_array = ast.literal_eval(array_string)
     for category in objects_array:
-        structure_type, structures =  tuple(category)
+        structure_type, structure_biome, structures =  tuple(category)
+        if structure_biome in biome_blacklist: continue
         for structure in structures:
             i += 1
-            arma_class, biome, width, length, height = tuple(structure)
-            Arma_building(arma_class, biome, width, length, height, structure_type)
+            arma_class, width, length, height = tuple(structure)
+            Arma_building(arma_class, structure_biome, width, length, height, structure_type)
     print("Converted {} buildings to arma type".format(i))
-
-
 
 class Node:
     """
@@ -345,10 +372,10 @@ class Road:
         return ((90-degrees(angle))%180) - 90
     
     @classmethod
-    def find_nearest_road(Road, coords, close_enough=inf):
+    def find_nearest_road(Road, coords, close_enough=0, ignore_paths=True):
         distance = inf
         for road in Road.all_roads:
-            if road.road_type == 'path': continue # Buildings aren't aligned to paths
+            if road.road_type == 'path' and ignore_paths: continue # Buildings aren't aligned to paths
             nodes = road.all_nodes_as_coords()
             vector_distances = nodes - coords
             distances = np.asarray([np.hypot(point[0], point[1]) for point in vector_distances])
@@ -484,12 +511,12 @@ class Building:
         elif building_type in BUILDING_TYPES_INDUSTRIAL:
             self.building_type = 'industrial'
         elif building_type in BUILDING_TYPES_HOUSE:
-            self.building_type = 'town'
+            self.building_type = 'city'
         elif building_type in BUILDING_TYPES_COMMERCIAL:
             #TODO: Make unique?
-            self.building_type = 'town'
+            self.building_type = 'city'
         else:
-            self.building_type = 'town'
+            self.building_type = 'city'
             # Warn that this was not matched for later
             if building_type not in Building.uses_not_exactly_matched: Building.uses_not_exactly_matched.append(building_type)
         
@@ -502,6 +529,19 @@ class Building:
 
     def create_arma_objects(self):
         return [self.arma_class, list(self.centre), self.direction]
+
+class Node_object:
+    all_node_objects = []
+    def __init__(self, position, direction, object_type):
+        self.position = position
+        self.direction =  direction
+        arma_classes = NODE_OBJECT_TYPES[object_type]
+        if isinstance(arma_classes, str): arma_classes = (arma_classes, )
+        self.arma_class = arma_classes[random.randint(0, len(arma_classes) - 1)]
+        Node_object.all_node_objects.append(self)
+
+    def create_arma_objects(self):
+        return [self.arma_class, list(self.position), self.direction]
 
 def cart2pol(coords):
     dist = np.sqrt(coords[0]**2 + coords[1]**2)
@@ -642,9 +682,10 @@ def convert_buildings(root):
         centreX = (min_x + max_x)/2
         centreY = (min_y + max_y)/2
         centre = np.asarray([centreX, centreY])
+        close_enough_distance = 1.5*sqrt(diff_x**2+diff_y**2)
         # If building has an associated street or a nearby street, then find the tangent of the closest segment, else calculate it manually.
         if building_street == 'none' or building_street not in Road.roads_hash.keys():
-            distance, street_object = Road.find_nearest_road(centre, 15)
+            distance, street_object = Road.find_nearest_road(centre, close_enough_distance)
         else:
             street_object = Road.roads_hash[building_street]
             vector_distances = street_object.all_nodes_as_coords() - centre
@@ -652,7 +693,7 @@ def convert_buildings(root):
             distance = np.min(distances)
 
         # Is it near a road, if so then use that as direction, if not calculate manually
-        if distance < 1.5*sqrt(diff_x**2+diff_y**2):
+        if distance < close_enough_distance:
             direction_deg = street_object.get_direction_perp_to_road(centre)
             # TODO: make face road
         else:
@@ -676,8 +717,37 @@ def convert_buildings(root):
     print("WARNING: The following building types were not exactly matched and have defaulted to residential/commercial: {}".format(Building.uses_not_exactly_matched))
     print("Done converting buildings")
 
-def convert_amenity_nodes(root):
-    pass
+def convert_node_objects(root):
+    print("Converting point objects")
+    def get_value(value):
+        return value, [x for x in root if x.find(".//*[@v='{}']".format(value)) is not None and len(x.findall('nd')) == 0]
+    trees = get_value('tree')
+    bins = get_value('waste_basket')
+    benches = get_value('bench')
+    telephones = get_value('telephone')
+    post_boxes = get_value('post_box')
+    automated_teller_machines = get_value('atm')
+    statues = get_value('statue')
+    memorials = get_value('memorial')
+    bus_stops = get_value('bus_stop')
+    count = sum([len(x[1]) for x in [trees, bins, benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops]])
+    progress_bar = Progress_bar("Converting point objects", count)
+    for object_type, object_list in (benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops):
+        for node in object_list:
+            node_id = node.attrib['id']
+            node_coords = Node.nodes_hash[node_id].coords
+            ____, road = Road.find_nearest_road(node_coords, ignore_paths=False)
+            direction = road.get_direction_perp_to_road(node_coords)
+            Node_object(node_coords, direction, object_type)
+            progress_bar.update_progress()
+    for object_type, object_list in (trees, bins):
+        for node in object_list:
+            node_id = node.attrib['id']
+            node_coords = Node.nodes_hash[node_id].coords
+            direction = random.random()*360
+            Node_object(node_coords, direction, object_type)
+            progress_bar.update_progress()
+    print("Done converting point objects")
 
 def output_all_to_arma_array():
     print("Writing output")
@@ -686,6 +756,8 @@ def output_all_to_arma_array():
         buildArray.extend(road.create_arma_objects())
     for building in Building.all_buildings:
         buildArray.append(building.create_arma_objects())
+    for thing in Node_object.all_node_objects:
+        buildArray.append(thing.create_arma_objects())
     with open(r"input_data\fn_createCity.sqf") as c:
         script = c.readlines()
     with open("output.sqf", 'w') as f:
@@ -695,7 +767,7 @@ def output_all_to_arma_array():
     
 def debug_draw_image():
     print("Drawing preview")
-    resolution = 4000
+    resolution = 16000
     max_x = 0
     max_y = 0
     min_x = inf
@@ -740,7 +812,7 @@ def debug_draw_image():
         node_sets = road.node_sets_as_coords()
         for node_set in node_sets:
             as_tuples = tuple([tuple(to_pixels(node)) for node in node_set])
-            draw.line(as_tuples, fill='blue', width=1)
+            draw.line(as_tuples, fill='white', width=1)
     for building in Building.all_buildings:
         centre = to_pixels(building.centre)
         width = to_pixel(building.width)
@@ -755,16 +827,22 @@ def debug_draw_image():
         direction = building.direction
         vertices = make_rectangle(length, width, radians(direction+90), tuple(centre))
         draw.polygon(vertices, fill=(0, 255, 0, 62), outline='black')
+    for thing in Node_object.all_node_objects:
+        centre = to_pixels(thing.position)
+        bottom_left = tuple([p - 2 for p in centre])
+        top_right = tuple([p + 2 for p in centre])
+        draw.ellipse((bottom_left, top_right), fill=(255, 255, 0), outline='black')
     img.save("output.png")
     print("Done drawing preview")
 
 def main():
     tree = ET.parse(r'xml\map.osm.xml')
     root = tree.getroot()
-    covert_arma_buildings()
-    convert_nodes(root)
+    define_arma_buildings(biome_blacklist=[])
     define_roads()
+    convert_nodes(root)
     convert_highway_lines(root)
+    convert_node_objects(root)
     convert_buildings(root)
     output_all_to_arma_array()
     debug_draw_image()
