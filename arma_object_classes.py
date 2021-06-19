@@ -80,6 +80,7 @@ class Arma_building:
             self.width = width
             self.length = length
             self.height = height
+            self.area = width * length
             self.arma_classes = [arma_class,]
             self.biome = biome
             self.structure_type = structure_type

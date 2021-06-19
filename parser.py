@@ -93,7 +93,7 @@ def convert_highway_lines(root):
 def convert_buildings(root):
     # TODO: multithread this
     print("Converting buildings")
-    buildings = [building for building in root if building.find(".//*[@k='building']") is not None and len(building.findall('nd')) > 1]
+    buildings = [building for building in root if building.find(".//*[@k='building']") is not None and (building.find(".//*[@role='outer']") is not None or len(building.findall('nd')) > 1)]
     print("Found {} buildings".format(len(buildings)))
     building_types = []
     building_amenities = []
@@ -115,6 +115,18 @@ def convert_buildings(root):
     progress_bar = Progress_bar("Converting buildings" ,len(buildings))
     for building in buildings:
         uid = building.attrib['id']
+        if len(building.findall('nd')) > 1:
+            nodes = [Node.nodes_hash[node.attrib['ref']] for node in building.findall("nd")]
+        elif building.find(".//*[@role='outer']") is not None:
+            outerRefs = building.findall(".//*[@role='outer']")
+            for outerRef in outerRefs:
+                outerID = outerRef.attrib['ref']
+                outerObject = root.find(".//*[@id='{}']".format(outerID)) 
+                if outerObject is not None: break
+            if outerObject is None:
+                progress_bar.print_in_progress("WARNING: could not find outer for building {}".format(uid))
+                continue
+            nodes = [Node.nodes_hash[node.attrib['ref']] for node in outerObject.findall("nd")]
         building_type = get_sub_object_attrib(building, 'building')
         building_street = get_sub_object_attrib(building, 'addr:street', 'none')
         building_amenity =  get_sub_object_attrib(building, 'amenity', 'none')
@@ -122,7 +134,6 @@ def convert_buildings(root):
             building_use = building_amenity
         else:
             building_use = building_type
-        nodes = [Node.nodes_hash[node.attrib['ref']] for node in building.findall("nd")]
         nodes_coords = [node.coords for node in nodes]
         maxes = np.max(nodes_coords, 0)
         mins = np.min(nodes_coords, 0)
@@ -135,7 +146,7 @@ def convert_buildings(root):
         centreX = (min_x + max_x)/2
         centreY = (min_y + max_y)/2
         centre = np.asarray([centreX, centreY])
-        close_enough_distance = 1.5*sqrt(diff_x**2+diff_y**2)
+        close_enough_distance = 2*sqrt(diff_x**2+diff_y**2)
         # If building has an associated street or a nearby street, then find the tangent of the closest segment, else calculate it manually.
         if building_street == 'none' or building_street not in Road.roads_hash.keys():
             distance, street_object = Road.find_nearest_road(centre, close_enough_distance)
@@ -298,7 +309,7 @@ def main():
     define_roads()
     convert_nodes(root)
     convert_highway_lines(root)
-    convert_node_objects(root)
+    #convert_node_objects(root)
     convert_buildings(root)
     output_all_to_arma_array()
     debug_draw_image()
