@@ -42,9 +42,9 @@ class Progress_bar():
         print("")
         self.update_progress()
 
-    # def print(self, string)
-    #     print(string)
-    #     print("")
+    def print_in_progress(self, string):
+        print(string)
+        print("")
 
     def update_progress(self):
         self.i += 1

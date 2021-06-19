@@ -97,7 +97,7 @@ class Arma_building:
         for building in buildings:
             width = building.width
             length = building.length
-            if width*0.9>target_width or length>target_length: continue
+            if width*0.75>target_width or length*0.75>target_length: continue
             this_accuracy = 1/(abs(width-target_width)+abs(length-target_length))
             if this_accuracy > accuracy:
                 accuracy = this_accuracy

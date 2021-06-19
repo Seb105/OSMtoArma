@@ -188,7 +188,10 @@ def convert_node_objects(root):
     for object_type, object_list in (benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops):
         for node in object_list:
             node_id = node.attrib['id']
-            node_coords = Node.nodes_hash[node_id].coords
+            if node_id in Node.nodes_hash.keys():
+                node_coords = Node.nodes_hash[node_id].coords
+            else: 
+                progress_bar.print_in_progress("WARNING: Node object {} failed to find node".format(node_id))
             ____, road = Road.find_nearest_road(node_coords, ignore_paths=False)
             direction = road.get_direction_perp_to_road(node_coords)
             Arma_node_object(node_coords, direction, object_type)
@@ -291,7 +294,7 @@ def debug_draw_image():
 def main():
     tree = ET.parse(r'xml\map.osm.xml')
     root = tree.getroot()
-    define_arma_buildings(biome_blacklist=[])
+    define_arma_buildings(biome_blacklist=['east_europe', 'middle_east'])
     define_roads()
     convert_nodes(root)
     convert_highway_lines(root)
