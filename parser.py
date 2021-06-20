@@ -1,3 +1,4 @@
+from threading import Thread, ThreadError
 import xml.etree.ElementTree as ET
 from math import degrees, radians, sin, sqrt, cos, inf
 from statistics import mean
@@ -9,8 +10,102 @@ import random
 from arma_object_classes import Arma_building, Arma_node_object, define_roads
 from OSM_object_classes import Road, Node, Building
 from arma_to_osm_helpers import Progress_bar
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from itertools import repeat
 random.seed(1)
+tree = ET.parse(r'xml\map.osm.xml')
+root = tree.getroot()
 EARTH_RADIUS = 6371000
+
+def init_process(nodes_all, nodes_hash, all_roads, roads_hash, road_uids):
+    global Node
+    global Road
+    Node.nodes_all = nodes_all
+    Node.nodes_hash = nodes_hash
+    Road.all_roads = all_roads
+    Road.roads_hash = roads_hash
+    Road.road_uids = road_uids
+
+#This has to be in global namespace for threading reasons
+def convert_building_to_arma(building):
+    uid = building.attrib['id']
+    if len(building.findall('nd')) > 1:
+        nodes = [Node.nodes_hash[node.attrib['ref']] for node in building.findall("nd")]
+    elif building.find(".//*[@role='outer']") is not None:
+        outerRefs = building.findall(".//*[@role='outer']")
+        for outerRef in outerRefs:
+            outerID = outerRef.attrib['ref']
+            outerObject = root.find(".//*[@id='{}']".format(outerID)) 
+            if outerObject is not None: break
+        nodes = [Node.nodes_hash[node.attrib['ref']] for node in outerObject.findall("nd")]
+    building_type = get_sub_object_attrib(building, 'building')
+    building_street = get_sub_object_attrib(building, 'addr:street', 'none')
+    building_amenity =  get_sub_object_attrib(building, 'amenity', 'none')
+    if building_type == 'yes' and building_amenity != 'none':
+        building_use = building_amenity
+    else:
+        building_use = building_type
+    nodes_coords = [node.coords for node in nodes]
+    maxes = np.max(nodes_coords, 0)
+    mins = np.min(nodes_coords, 0)
+    max_x = maxes[0]
+    max_y = maxes[1]
+    min_x = mins[0]
+    min_y = mins[1]
+    diff_x = max_x - min_x
+    diff_y = max_y - min_y
+    centreX = (min_x + max_x)/2
+    centreY = (min_y + max_y)/2
+    centre = np.asarray([centreX, centreY])
+    close_enough_distance = max(diff_x, diff_y)
+    # If building has an associated street or a nearby street, then find the tangent of the closest segment, else calculate it manually.
+    if building_street == 'none' or building_street not in Road.roads_hash.keys():
+        distance, road_object = Road.find_nearest_road(centre, close_enough_distance)
+    else:
+        road_object = Road.roads_hash[building_street]
+        vector_distances = road_object.all_nodes_as_coords() - centre
+        distances = np.asarray([np.hypot(point[0], point[1]) for point in vector_distances])
+        distance = np.min(distances)
+
+    # Is it near a road, if so then use that as direction, if not calculate manually
+    if distance <= close_enough_distance:
+        direction_deg = road_object.get_direction_perp_to_road(centre)
+        # TODO: make face road
+    else:
+        # Average the angles of all nodes that make up this building, return between 0-45 degrees.
+        angles = []
+        for i, node in enumerate(nodes_coords[:-1]):
+            next_node = nodes_coords[i+1]
+            diff = next_node -  node
+            angle = degrees(np.arctan2(diff[0], diff[1]))%90
+            angles.append(angle)
+        direction_deg = mean(angles)
+    # Direction always 0-360. Makes handling stuff easier.
+    if direction_deg < 0: direction_deg += 360
+    # This is used for actually getting the rectangular length of the building. It is 0 if the building is facing N/E/S/W and 45 for NE/SE/SW/NW.
+    direction_to_nearest_45_deg = min(90-direction_deg%90, direction_deg%90)
+    cos_nearest_45 = cos(radians((direction_to_nearest_45_deg)))
+    # diff_y =  bounding box length
+    # (1-(direction_to_nearest_45_deg/90) = If width/length of building is hypotenuse, then this is the adjacent length of the buidling.
+    # Divide by cos nearest 45 to get the actual building length/width
+    width = (diff_x * (1-(direction_to_nearest_45_deg/90)))/cos_nearest_45
+    length = (diff_y * (1-(direction_to_nearest_45_deg/90)))/cos_nearest_45
+    # If building is facing NE-SW or SE-NW then the width is actually the length and visa versa.
+    if 45<direction_deg<135 or 315>direction_deg>225:
+        a,b = width, length
+        width, length = b, a
+    return centre, direction_deg, width, length, road_object.uid, building_use, uid
+
+#So does this
+def convert_node_to_arma(object_type, node):
+    node_id = node.attrib['id']
+    if node_id in Node.nodes_hash.keys():
+        node_coords = Node.nodes_hash[node_id].coords
+    else:
+        return None, "WARNING: Node object {} failed to find node".format(node_id), None
+    ____, road = Road.find_nearest_road(node_coords, 15, ignore_paths=False)
+    direction = road.get_direction_perp_to_road(node_coords)
+    return node_coords, direction, object_type
 
 def define_arma_buildings(path=r"input_data\armaObjects.txt", biome_blacklist=[]):
     print("Converting arma buildings to classes")
@@ -91,9 +186,9 @@ def convert_highway_lines(root):
     print("WARNING: The following road surfaces are not defined and defaulted to 'paved': {}".format(Road.unmatched_road_surfaces))
 
 def convert_buildings(root):
-    # TODO: multithread this
     print("Converting buildings")
     buildings = [building for building in root if building.find(".//*[@k='building']") is not None and (building.find(".//*[@role='outer']") is not None or len(building.findall('nd')) > 1)]
+    random.shuffle(buildings)
     print("Found {} buildings".format(len(buildings)))
     building_types = []
     building_amenities = []
@@ -108,75 +203,18 @@ def convert_buildings(root):
         else:
             building_use = building_type
         if building_use not in building_uses: building_uses.append(building_use)
-    # print("Unique building types: {}".format(building_types))
-    # print("Unique amenity types: {}".format(building_amenities))
-    # print("Unique buildings uses: {}".format(building_uses))
-    
-    progress_bar = Progress_bar("Converting buildings" ,len(buildings))
-    for building in buildings:
-        uid = building.attrib['id']
-        if len(building.findall('nd')) > 1:
-            nodes = [Node.nodes_hash[node.attrib['ref']] for node in building.findall("nd")]
-        elif building.find(".//*[@role='outer']") is not None:
-            outerRefs = building.findall(".//*[@role='outer']")
-            for outerRef in outerRefs:
-                outerID = outerRef.attrib['ref']
-                outerObject = root.find(".//*[@id='{}']".format(outerID)) 
-                if outerObject is not None: break
-            if outerObject is None:
-                progress_bar.print_in_progress("WARNING: could not find outer for building {}".format(uid))
-                continue
-            nodes = [Node.nodes_hash[node.attrib['ref']] for node in outerObject.findall("nd")]
-        building_type = get_sub_object_attrib(building, 'building')
-        building_street = get_sub_object_attrib(building, 'addr:street', 'none')
-        building_amenity =  get_sub_object_attrib(building, 'amenity', 'none')
-        if building_type == 'yes' and building_amenity != 'none':
-            building_use = building_amenity
-        else:
-            building_use = building_type
-        nodes_coords = [node.coords for node in nodes]
-        maxes = np.max(nodes_coords, 0)
-        mins = np.min(nodes_coords, 0)
-        max_x = maxes[0]
-        max_y = maxes[1]
-        min_x = mins[0]
-        min_y = mins[1]
-        diff_x = max_x - min_x
-        diff_y = max_y - min_y
-        centreX = (min_x + max_x)/2
-        centreY = (min_y + max_y)/2
-        centre = np.asarray([centreX, centreY])
-        close_enough_distance = 2*sqrt(diff_x**2+diff_y**2)
-        # If building has an associated street or a nearby street, then find the tangent of the closest segment, else calculate it manually.
-        if building_street == 'none' or building_street not in Road.roads_hash.keys():
-            distance, street_object = Road.find_nearest_road(centre, close_enough_distance)
-        else:
-            street_object = Road.roads_hash[building_street]
-            vector_distances = street_object.all_nodes_as_coords() - centre
-            distances = np.asarray([np.hypot(point[0], point[1]) for point in vector_distances])
-            distance = np.min(distances)
+    print("Unique building types: {}".format(building_types))
+    print("Unique amenity types: {}".format(building_amenities))
+    print("Unique buildings uses: {}".format(building_uses))
 
-        # Is it near a road, if so then use that as direction, if not calculate manually
-        if distance < close_enough_distance:
-            direction_deg = street_object.get_direction_perp_to_road(centre)
-            # TODO: make face road
-        else:
-            # Average the angles of all nodes that make up this building, return between 0-45 degrees.
-            angles = []
-            for i, node in enumerate(nodes_coords[:-1]):
-                next_node = nodes_coords[i+1]
-                diff = next_node -  node
-                angle = degrees(np.arctan2(diff[0], diff[1]))%90
-                angles.append(angle)
-            direction_deg = mean(angles)
-        if direction_deg < 0: direction_deg += 360
-        direction_to_nearest_45_deg = min(90-direction_deg%90, direction_deg%90)
-        width = diff_x * (1-(direction_to_nearest_45_deg/90))
-        length = diff_y * (1-(direction_to_nearest_45_deg/90))
-        if 45<direction_deg<135 or 315>direction_deg>225:
-            a,b = width, length
-            width, length = b, a
-        Building(centre, direction_deg, width, length, street_object, building_type, uid)
+    print("Starting multithreading. This may take a while.")
+
+    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids))
+    progress_bar = Progress_bar("Creating buildings", len(buildings))
+    results = process_executor.map(convert_building_to_arma, buildings, chunksize=512)
+    for centre, direction_deg, width, length, road_object_uid, building_use, uid in results:
+        road_object = Road.road_uids[road_object_uid]
+        Building(centre, direction_deg, width, length, road_object, building_use, uid)
         progress_bar.update_progress()
     print("WARNING: The following building types were not exactly matched and have defaulted to residential/commercial: {}".format(Building.uses_not_exactly_matched))
     print("Done converting buildings")
@@ -195,17 +233,15 @@ def convert_node_objects(root):
     memorials = get_value('memorial')
     bus_stops = get_value('bus_stop')
     count = sum([len(x[1]) for x in [trees, bins, benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops]])
-    progress_bar = Progress_bar("Converting point objects", count)
+    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids))
+    progress_bar = Progress_bar("Creating node objects", count)
     for object_type, object_list in (benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops):
-        for node in object_list:
-            node_id = node.attrib['id']
-            if node_id in Node.nodes_hash.keys():
-                node_coords = Node.nodes_hash[node_id].coords
-            else: 
-                progress_bar.print_in_progress("WARNING: Node object {} failed to find node".format(node_id))
-            ____, road = Road.find_nearest_road(node_coords, ignore_paths=False)
-            direction = road.get_direction_perp_to_road(node_coords)
-            Arma_node_object(node_coords, direction, object_type)
+        results = process_executor.map(convert_node_to_arma,repeat(object_type), object_list, chunksize=512)
+        for node_coords, direction, object_type in results:
+            if node_coords is None:
+                print("WARNING: Node object {} failed to find node".format(direction))
+            else:
+                Arma_node_object(node_coords, direction, object_type)
             progress_bar.update_progress()
     for object_type, object_list in (trees, bins):
         for node in object_list:
@@ -221,6 +257,8 @@ def output_all_to_arma_array():
     buildArray = []
     for road in Road.all_roads:
         buildArray.extend(road.create_arma_objects())
+    for road_search, road_identifier in Road.unmatched_road_pairs:
+        print("WARNING: Arma Road {} could not be found. Defaulted to {}".format(road_search, road_identifier))
     for building in Building.all_buildings:
         buildArray.append(building.create_arma_objects())
     for thing in Arma_node_object.all_node_objects:
@@ -303,9 +341,7 @@ def debug_draw_image():
     print("Done drawing preview")
 
 def main():
-    tree = ET.parse(r'xml\map.osm.xml')
-    root = tree.getroot()
-    define_arma_buildings(biome_blacklist=['east_europe', 'middle_east'])
+    define_arma_buildings(biome_blacklist=['east_europe', 'middle_east', 'asia_modern'])
     define_roads()
     convert_nodes(root)
     convert_highway_lines(root)

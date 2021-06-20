@@ -38,7 +38,8 @@ class Progress_bar():
         self.count = count
         self.i = -1
         self.barlength = 20
-        self.last_update = time.time()-10
+        self.last_update = time.time()
+        self.start_time = self.last_update
         print("")
         self.update_progress()
 
@@ -46,12 +47,18 @@ class Progress_bar():
         print(string)
         print("")
 
+    def update_exact(self, i):
+        self.i = i-1
+        self.update_progress()
+
     def update_progress(self):
         self.i += 1
         progress = self.i/self.count
         if self.last_update+1<time.time() or progress >= 1:
             self.last_update=time.time()
             block = int(round(self.barlength*progress))
-            text = "{0}: [{1}] {2}%".format(self.activity, "#"*block + "-"*(self.barlength-block), round(progress*100))
+            seconds_remaining = int(((time.time() - self.start_time)/progress) * (1-progress))
+            text = "{0}: [{1}] {2}%. {3} seconds remaining".format(self.activity, "#"*block + "-"*(self.barlength-block), round(progress*100, 2), seconds_remaining)
             lineEnd = '\r' if progress<1.0 else '\n\n'
+            print("                                                                                               ", end="\r")
             print(text, end=lineEnd)

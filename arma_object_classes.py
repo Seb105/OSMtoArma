@@ -113,7 +113,6 @@ class Arma_building:
             else:
                 return_building.variety += 1
             return return_class
-
 class Arma_node_object:
     """
     An Arma node object is a node which represents a single object, like a bench or rubbish bin.

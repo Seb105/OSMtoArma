@@ -36,8 +36,10 @@ class Road:
     """
     all_roads = []
     roads_hash = {}
+    road_uids = {}
     unmatched_road_types = []
     unmatched_road_surfaces = []
+    unmatched_road_pairs = []
     def __init__(self, name, road_type, surface, nodes, uid, is_lit):
         self.name = name
         self.nodes = [nodes]
@@ -74,6 +76,7 @@ class Road:
         if self.name != "NOT_FOUND":
             Road.roads_hash[name] = self
         Road.all_roads.append(self)
+        Road.road_uids[uid] = self
 
     def all_nodes(self):
         nodes = []
@@ -87,6 +90,11 @@ class Road:
 
     def node_sets_as_coords(self):
         return [[node.coords for node in node_set] for node_set in self.nodes]
+
+    # @classmethod
+    # def get_direction_perp_to_road_threaded(Road, road_uid, coords):
+    #     road_object = Road.road_uids[road_uid]
+    #     return road_object.get_direction_perp_to_road(coords)
 
     def get_direction_perp_to_road(self, coords):
         """
@@ -137,7 +145,8 @@ class Road:
             if len(road_class_list) > 0:
                 road_identifier = road_class_list[0]
                 road_class = Arma_road.arma_road_match[road_identifier]
-                print("WARNING: Arma Road {} could not be found. Defaulted to {}".format(road_search, road_identifier))
+                if (road_search, road_identifier) not in Road.unmatched_road_pairs:
+                    Road.unmatched_road_pairs.append((road_search, road_identifier))
             else:
                 raise KeyError("{} cannot be matched to any type of Arma road".format(road_search))
         placeAtCentre = road_class.placeCentre
