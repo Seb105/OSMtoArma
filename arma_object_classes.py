@@ -129,6 +129,18 @@ class Arma_node_object:
     def create_arma_objects(self):
         return [self.arma_class, list(self.position), self.direction]
 
+class Arma_barrier:
+    """
+    An arma barrier is a barrier segment classes such as walls and fences. 
+    
+    These segments may be used to convert an OSM way into arma classes.
+    """
+    arma_barrier_match = {}
+    def __init__(self, barrier_type, straights):
+        self.barrier_type = barrier_type
+        self.straights = straights
+        Arma_barrier.arma_barrier_match[barrier_type] = self
+
 def define_roads():
     paved_primary = Arma_road('paved', ('primary', 'residential'), {
         6: "CUP_A2_Road_asf1_6",
@@ -234,3 +246,22 @@ def define_roads():
         60: ("CUP_A2_Road_OA_path_60_10", 10),
     },
     "CUP_A2_Road_OA_path_6konec")
+
+def define_barriers():
+    hedge = Arma_barrier('hedge', {
+        2 : "Land_Hedge_01_s_2m_F",
+        4 : "Land_Hedge_01_s_4m_F"
+    })
+    wall = Arma_barrier('wall', {
+        4 : "Land_ConcreteWall_01_l_4m_F",
+        8 : "Land_ConcreteWall_01_l_8m_F"
+    })
+    castle_wall = Arma_barrier('city_wall', {
+        4 : "Land_BasaltWall_01_4m_F",
+        8 : "Land_BasaltWall_01_8m_F"
+    })
+    fence = Arma_barrier('fence', {
+        2 : "Land_WoodenWall_02_s_2m_F",
+        4 : "Land_WoodenWall_02_s_4m_F",
+        8 : "Land_WoodenWall_02_s_8m_F"
+    })

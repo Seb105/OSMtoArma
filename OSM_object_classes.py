@@ -1,7 +1,7 @@
 import numpy as np
 from arma_to_osm_helpers import cart2pol, pol2cart
 from math import degrees, inf
-from arma_object_classes import Arma_road, Arma_building
+from arma_object_classes import Arma_road, Arma_building, Arma_barrier
 # ROAD TYPE DEFINITIONS
 MOTORWAY_ROAD_TYPES =       ['motorway', 'motorway_link']
 PRIMARY_ROAD_TYPES =        ["primary", "primary_link", 'trunk', 'trunk_link', 'corridor']
@@ -228,6 +228,65 @@ class Road:
                     current_pos = segment_end
                     dist_done += segment_length
                     arma_array.append([road_class.straights[segment_length], list(centre), angle_deg])
+        return arma_array
+
+class Barrier:
+    """
+    A Road object is an imported OSM barrier
+    City walls, fences hedges etc.
+    """
+    all_barriers = []
+    unmatched_barriers = []
+    def __init__(self, barrier_type, nodes, uid):
+        self.nodes = nodes
+        self.uid = uid
+        self.barrier_type = barrier_type
+
+        Barrier.all_barriers.append(self)
+
+
+    def all_nodes_as_coords(self):
+        return [node.coords for node in self.nodes]
+
+    # Create an array of objects that can be used in Arma 3 to create objects. Format [class, pos, dir]
+    def create_arma_objects(self):
+        nodes = self.all_nodes_as_coords()
+        arma_array = []
+        # Find the type of segments to use from the road surface and type.
+        # If the road type does not exist, try matching just the surface. Throw error if that doesn't exist either
+        barriers_search = self.barrier_type
+        if barriers_search in Arma_barrier.arma_barrier_match.keys():
+            barrier_class = Arma_barrier.arma_barrier_match[barriers_search]
+        else:
+            raise KeyError("{} cannot be matched to any type of Arma road".format(barriers_search))
+        lengths = barrier_class.straights.keys()
+        min_road_length = min(lengths)
+        for i, node in enumerate(nodes[:-1]):
+            next_node = nodes[i+1]
+            current_pos = node
+            #Vector distance between two points
+            diff = next_node - node
+            # Distance from this node to next node and angle.
+            dist, angle_rad = cart2pol(diff)
+            dist_done = 0
+            # Subtract from 90 as angle_rad is actually 0 when pointing east, and we want 0 = north.
+            angle_deg = 90 - degrees(angle_rad)
+            while dist>=dist_done:
+                # Filter segment lengths to those less than or equal to the distance remaining
+                available_segments = [length for length in lengths if length <= dist-dist_done]
+                # Segment to use
+                segment_length = max(available_segments) if len(available_segments) > 0 else min_road_length
+                
+                # Move the segment into position and update origin for next iteration
+                offset = pol2cart(angle_rad, segment_length)
+                segement_start = current_pos
+                segment_end = segement_start + offset
+
+                # Some objects are placed at the model centre, and some are placed at the edge of the model. Offset is different in each case. Handle that here.
+                centre = segement_start + offset/2
+                current_pos = segment_end
+                dist_done += segment_length
+                arma_array.append([barrier_class.straights[segment_length], list(centre), angle_deg])
         return arma_array
 
 class Building:

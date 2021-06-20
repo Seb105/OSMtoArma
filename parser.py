@@ -7,8 +7,8 @@ import numpy as np
 from PIL import Image, ImageDraw
 import ast
 import random
-from arma_object_classes import Arma_building, Arma_node_object, define_roads
-from OSM_object_classes import Road, Node, Building
+from arma_object_classes import Arma_barrier, Arma_building, Arma_node_object, define_roads, define_barriers
+from OSM_object_classes import Road, Node, Building, Barrier
 from arma_to_osm_helpers import Progress_bar
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from itertools import repeat
@@ -173,7 +173,6 @@ def convert_highway_lines(root):
             road_lit = get_sub_object_attrib(highway, 'lit')
             road_surface = get_sub_object_attrib(highway, 'surface', "asphalt")
             Road(road_name, road_type, road_surface, nodes, road_uid, road_lit)
-
             if road_type not in all_road_types: all_road_types.append(road_type)
             if road_surface not in all_road_surfaces: all_road_surfaces.append(road_surface)
         progress_bar.update_progress()
@@ -252,6 +251,21 @@ def convert_node_objects(root):
             progress_bar.update_progress()
     print("Done converting point objects")
 
+def convert_barriers(root):
+    ways = root.findall('way')
+    barriers = [way for way in ways if way.find(".//*[@k='barrier']") is not None]
+    print("Found {} barriers".format(len(barriers)))
+    barriers_not_processed = []
+    for barrier in barriers:
+        nodes = [Node.nodes_hash[node.attrib['ref']] for node in barrier.findall("nd")]
+        barrier_type = get_sub_object_attrib(barrier, 'barrier')
+        if barrier_type in Arma_barrier.arma_barrier_match.keys():
+            uid = barrier.attrib['id']
+            Barrier(barrier_type, nodes, uid)
+        else:
+            if barrier_type not in barriers_not_processed: barriers_not_processed.append(barrier_type)
+    print("WARNING: The following barrier types are not processed: {}".format(barriers_not_processed))
+
 def output_all_to_arma_array():
     print("Writing output")
     buildArray = []
@@ -263,6 +277,8 @@ def output_all_to_arma_array():
         buildArray.append(building.create_arma_objects())
     for thing in Arma_node_object.all_node_objects:
         buildArray.append(thing.create_arma_objects())
+    for barrier in Barrier.all_barriers:
+        buildArray.extend(barrier.create_arma_objects())
     with open(r"input_data\fn_createCity.sqf") as c:
         script = c.readlines()
     with open("output.sqf", 'w') as f:
@@ -285,6 +301,13 @@ def debug_draw_image():
         min_y = min(centre[1], min_y)
     for road in Road.all_roads:
         nodes = road.all_nodes_as_coords()
+        for node in nodes:
+            max_x = max(node[0], max_x)
+            max_y = max(node[1], max_y)
+            min_x = min(node[0], min_x)
+            min_y = min(node[1], min_y)
+    for barrier in Barrier.all_barriers:
+        nodes = barrier.all_nodes_as_coords()
         for node in nodes:
             max_x = max(node[0], max_x)
             max_y = max(node[1], max_y)
@@ -337,16 +360,22 @@ def debug_draw_image():
         bottom_left = tuple([p - 2 for p in centre])
         top_right = tuple([p + 2 for p in centre])
         draw.ellipse((bottom_left, top_right), fill=(255, 255, 0), outline='black')
+    for barrier in Barrier.all_barriers:
+        nodes =  barrier.all_nodes_as_coords()
+        as_tuples = tuple([tuple(to_pixels(node)) for node in nodes])
+        draw.line(as_tuples, fill='brown', width=2)
     img.save("output.png")
     print("Done drawing preview")
 
 def main():
     define_arma_buildings(biome_blacklist=['east_europe', 'middle_east', 'asia_modern'])
     define_roads()
+    define_barriers()
     convert_nodes(root)
     convert_highway_lines(root)
     convert_node_objects(root)
     convert_buildings(root)
+    convert_barriers(root)
     output_all_to_arma_array()
     debug_draw_image()
 
