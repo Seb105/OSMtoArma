@@ -46,6 +46,7 @@ class Road:
         self.uid = uid
         self.is_lit = is_lit
         self.buildings = []
+        self.length = 0
 
         if road_type in PRIMARY_ROAD_TYPES or road_type in MOTORWAY_ROAD_TYPES:
             self.road_type = "primary"
@@ -91,10 +92,17 @@ class Road:
     def node_sets_as_coords(self):
         return [[node.coords for node in node_set] for node_set in self.nodes]
 
-    # @classmethod
-    # def get_direction_perp_to_road_threaded(Road, road_uid, coords):
-    #     road_object = Road.road_uids[road_uid]
-    #     return road_object.get_direction_perp_to_road(coords)
+    def calculate_road_length(self):
+        length = 0
+        node_sets = self.node_sets_as_coords()
+        for node_set in node_sets:
+            for i, node in enumerate(node_set[0:-1]):
+                next_node = node_set[i+1]
+                diff = next_node - node
+                dist = np.hypot(diff[0], diff[1])
+                length += dist
+        self.length = length
+
 
     def get_direction_perp_to_road(self, coords):
         """
@@ -123,6 +131,12 @@ class Road:
             if road.road_type == 'path' and ignore_paths: continue # Buildings aren't aligned to paths
             nodes = road.all_nodes_as_coords()
             vector_distances = nodes - coords
+
+            # Optimize road searching
+            first_diff = nodes[0] - coords
+            first_distance = np.hypot(first_diff[0], first_diff[1])
+            if first_distance > 2*road.length: continue
+
             distances = np.asarray([np.hypot(point[0], point[1]) for point in vector_distances])
             min_distance = np.min(distances)
             if min_distance<distance:
@@ -271,6 +285,7 @@ class Barrier:
             dist_done = 0
             # Subtract from 90 as angle_rad is actually 0 when pointing east, and we want 0 = north.
             angle_deg = 90 - degrees(angle_rad)
+            if barrier_class.rotate_90: angle_deg += 90
             while dist>=dist_done:
                 # Filter segment lengths to those less than or equal to the distance remaining
                 available_segments = [length for length in lengths if length <= dist-dist_done]

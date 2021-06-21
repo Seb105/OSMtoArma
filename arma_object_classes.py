@@ -98,7 +98,7 @@ class Arma_building:
         for building in buildings:
             width = building.width
             length = building.length
-            if width*0.75>target_width or length*0.75>target_length: continue
+            if width*0.9>target_width or length*0.9>target_length: continue
             this_accuracy = 1/(abs(width-target_width)+abs(length-target_length))
             if this_accuracy > accuracy:
                 accuracy = this_accuracy
@@ -136,9 +136,10 @@ class Arma_barrier:
     These segments may be used to convert an OSM way into arma classes.
     """
     arma_barrier_match = {}
-    def __init__(self, barrier_type, straights):
+    def __init__(self, barrier_type, straights, rotate_90):
         self.barrier_type = barrier_type
         self.straights = straights
+        self.rotate_90 =  rotate_90
         Arma_barrier.arma_barrier_match[barrier_type] = self
 
 def define_roads():
@@ -251,17 +252,17 @@ def define_barriers():
     hedge = Arma_barrier('hedge', {
         2 : "Land_Hedge_01_s_2m_F",
         4 : "Land_Hedge_01_s_4m_F"
-    })
+    }, False)
     wall = Arma_barrier('wall', {
         4 : "Land_ConcreteWall_01_l_4m_F",
         8 : "Land_ConcreteWall_01_l_8m_F"
-    })
+    }, True)
     castle_wall = Arma_barrier('city_wall', {
         4 : "Land_BasaltWall_01_4m_F",
         8 : "Land_BasaltWall_01_8m_F"
-    })
+    }, True)
     fence = Arma_barrier('fence', {
         2 : "Land_WoodenWall_02_s_2m_F",
         4 : "Land_WoodenWall_02_s_4m_F",
         8 : "Land_WoodenWall_02_s_8m_F"
-    })
+    }, True)

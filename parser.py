@@ -17,7 +17,7 @@ tree = ET.parse(r'xml\map.osm.xml')
 root = tree.getroot()
 EARTH_RADIUS = 6371000
 
-def init_process(nodes_all, nodes_hash, all_roads, roads_hash, road_uids):
+def init_process(nodes_all, nodes_hash, all_roads, roads_hash, road_uids, all_arma_buildings, all_arma_classes):
     global Node
     global Road
     Node.nodes_all = nodes_all
@@ -25,6 +25,8 @@ def init_process(nodes_all, nodes_hash, all_roads, roads_hash, road_uids):
     Road.all_roads = all_roads
     Road.roads_hash = roads_hash
     Road.road_uids = road_uids
+    Arma_building.all_classes = all_arma_buildings
+    Arma_building.all_classes = all_arma_classes
 
 #This has to be in global namespace for threading reasons
 def convert_building_to_arma(building):
@@ -176,6 +178,8 @@ def convert_highway_lines(root):
             if road_type not in all_road_types: all_road_types.append(road_type)
             if road_surface not in all_road_surfaces: all_road_surfaces.append(road_surface)
         progress_bar.update_progress()
+    for road in Road.all_roads:
+        road.calculate_road_length()
     print("Created {} unique roads. {} are unnamed. {} are named.".format(len(Road.all_roads), len(Road.all_roads) - len(Road.roads_hash), len(Road.roads_hash)))
     print("Unique road types: {}".format(all_road_types))
     print("Unique road surfaces: {}".format(all_road_surfaces))
@@ -208,7 +212,7 @@ def convert_buildings(root):
 
     print("Starting multithreading. This may take a while.")
 
-    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids))
+    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids, Arma_building.all_classes, Arma_building.all_classes))
     progress_bar = Progress_bar("Creating buildings", len(buildings))
     results = process_executor.map(convert_building_to_arma, buildings, chunksize=512)
     for centre, direction_deg, width, length, road_object_uid, building_use, uid in results:
@@ -232,7 +236,7 @@ def convert_node_objects(root):
     memorials = get_value('memorial')
     bus_stops = get_value('bus_stop')
     count = sum([len(x[1]) for x in [trees, bins, benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops]])
-    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids))
+    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids, Arma_building.all_classes, Arma_building.all_classes))
     progress_bar = Progress_bar("Creating node objects", count)
     for object_type, object_list in (benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops):
         results = process_executor.map(convert_node_to_arma,repeat(object_type), object_list, chunksize=512)
@@ -368,6 +372,7 @@ def debug_draw_image():
     print("Done drawing preview")
 
 def main():
+    start_time = time.time()
     define_arma_buildings(biome_blacklist=['east_europe', 'middle_east', 'asia_modern'])
     define_roads()
     define_barriers()
@@ -378,6 +383,8 @@ def main():
     convert_barriers(root)
     output_all_to_arma_array()
     debug_draw_image()
+    end_time = time.time()
+    print("Took {} seconds for conversion".format(round(end_time - start_time)))
 
 if __name__ == "__main__":
     main()
