@@ -126,16 +126,20 @@ def convert_building_to_arma(building):
                 new_centre = centre + i * width_change + j * length_change
                 centres.append(new_centre)
         for centre in centres:
+            if is_near_road:
+                ___, road_object = Road.find_nearest_road(centre, 0)
+                direction_deg_new = road_object.get_direction_perp_to_road(centre)
+            if not (45<direction_deg<135 or 315>direction_deg>225) and (45<direction_deg_new<135 or 315>direction_deg_new>225):
+                a,b = width, length
+                width, length = b, a
+            direction_deg = direction_deg_new
+            random_width = width * (0.835 + random.random()/3) 
+            random_length = length * (0.835 + random.random()/3) 
             if (max_width>width or max_length>length) or Arma_building.find_suitable_building(width/3.125, length/3.125, building_use) is None:
-                new_width = width*(0.875+random.random()/4)
-                new_length = length*(0.875+random.random()/4)
-                building_class = Arma_building.find_suitable_building(new_width, new_length, building_use)
-                buildings.append((centre, direction_deg, new_width, new_length, road_object.uid, building_use, uid, building_class))
+                building_class = Arma_building.find_suitable_building(random_width, random_length, building_use)
+                buildings.append((centre, direction_deg, random_width, random_length, road_object.uid, building_use, uid, building_class))
             else:
-                if is_near_road:
-                    ___, road_object = Road.find_nearest_road(centre, 0)
-                    direction_deg = road_object.get_direction_perp_to_road(centre)
-                split_city_block(width, length, centre, direction_deg, road_object)
+                split_city_block(random_width, random_length, centre, direction_deg, road_object)
 
     if width > 2*length and building_use == 'city':
         split_building_to_terrace(width, length, centre, direction_deg)
@@ -291,7 +295,7 @@ def convert_node_objects(root):
         results = process_executor.map(convert_node_to_arma,repeat(object_type), object_list, chunksize=512)
         for node_coords, direction, object_type in results:
             if node_coords is None:
-                print("WARNING: Node object {} failed to find node".format(direction))
+                print(direction)
             else:
                 Arma_node_object(node_coords, direction, object_type)
             progress_bar.update_progress()
@@ -428,7 +432,7 @@ def debug_draw_image():
 
 def main():
     start_time = time.time()
-    define_arma_buildings(biome_blacklist=['east_europe', 'middle_east', 'asia_modern'])
+    define_arma_buildings(biome_blacklist=[])
     define_roads()
     define_barriers()
     convert_nodes(root)
