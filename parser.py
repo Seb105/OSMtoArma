@@ -432,7 +432,7 @@ def debug_draw_image():
 
 def main():
     start_time = time.time()
-    define_arma_buildings(biome_blacklist=[])
+    define_arma_buildings(biome_blacklist=['middle_east', 'mediterranean', 'misc'])
     define_roads()
     define_barriers()
     convert_nodes(root)
