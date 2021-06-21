@@ -8,8 +8,8 @@ from PIL import Image, ImageDraw
 import ast
 import random
 from arma_object_classes import Arma_barrier, Arma_building, Arma_node_object, define_roads, define_barriers
-from OSM_object_classes import Road, Node, Building, Barrier
-from arma_to_osm_helpers import Progress_bar
+from OSM_object_classes import Road, Node, Building, Barrier, match_building_type
+from arma_to_osm_helpers import Progress_bar, pol2cart
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from itertools import repeat
 random.seed(1)
@@ -17,7 +17,7 @@ tree = ET.parse(r'xml\map.osm.xml')
 root = tree.getroot()
 EARTH_RADIUS = 6371000
 
-def init_process(nodes_all, nodes_hash, all_roads, roads_hash, road_uids, all_arma_buildings, all_arma_classes):
+def init_process(nodes_all, nodes_hash, all_roads, roads_hash, road_uids, all_arma_sizes, all_arma_classes, building_max_dimensions):
     global Node
     global Road
     global Arma_building
@@ -26,8 +26,9 @@ def init_process(nodes_all, nodes_hash, all_roads, roads_hash, road_uids, all_ar
     Road.all_roads = all_roads
     Road.roads_hash = roads_hash
     Road.road_uids = road_uids
-    Arma_building.all_classes = all_arma_buildings
+    Arma_building.sizes = all_arma_sizes
     Arma_building.all_classes = all_arma_classes
+    Arma_building.max_dimensions = building_max_dimensions
 
 #This has to be in global namespace for threading reasons
 def convert_building_to_arma(building):
@@ -48,6 +49,7 @@ def convert_building_to_arma(building):
         building_use = building_amenity
     else:
         building_use = building_type
+    building_use  = match_building_type(building_use)
     nodes_coords = [node.coords for node in nodes]
     maxes = np.max(nodes_coords, 0)
     mins = np.min(nodes_coords, 0)
@@ -60,10 +62,10 @@ def convert_building_to_arma(building):
     centreX = (min_x + max_x)/2
     centreY = (min_y + max_y)/2
     centre = np.asarray([centreX, centreY])
-    close_enough_distance = max(diff_x, diff_y)
+    close_enough_distance = 2*(diff_x + diff_y)
     # If building has an associated street or a nearby street, then find the tangent of the closest segment, else calculate it manually.
     if building_street == 'none' or building_street not in Road.roads_hash.keys():
-        distance, road_object = Road.find_nearest_road(centre, close_enough_distance)
+        distance, road_object = Road.find_nearest_road(centre, 0)
     else:
         road_object = Road.roads_hash[building_street]
         vector_distances = road_object.all_nodes_as_coords() - centre
@@ -71,7 +73,9 @@ def convert_building_to_arma(building):
         distance = np.min(distances)
 
     # Is it near a road, if so then use that as direction, if not calculate manually
+    is_near_road = False
     if distance <= close_enough_distance:
+        is_near_road = True
         direction_deg = road_object.get_direction_perp_to_road(centre)
         # TODO: make face road
     else:
@@ -97,7 +101,50 @@ def convert_building_to_arma(building):
     if 45<direction_deg<135 or 315>direction_deg>225:
         a,b = width, length
         width, length = b, a
-    return centre, direction_deg, width, length, road_object.uid, building_use, uid
+    # Split long buildings apart
+    max_width, max_length = Arma_building.max_dimensions
+    buildings = []
+    def split_building_to_terrace(width, length, centre, direction_deg):
+        width = width/3
+        centre_change = pol2cart(radians(90-direction_deg+90), width)
+        centres = (centre+centre_change, centre, centre-centre_change)
+        for centre in centres:
+            if width > 2*length:
+                split_building_to_terrace(width, length, centre, direction_deg)
+            else:
+                building_class = Arma_building.find_suitable_building(width, length, building_use)
+                buildings.append((centre, direction_deg, width, length, road_object.uid, building_use, uid, building_class))
+    def split_city_block(width, length, centre, direction_deg, road_object):
+        width = width/3
+        length = length/3
+        width_change = pol2cart(radians(90-direction_deg+90), width)
+        length_change = pol2cart(radians(90-direction_deg), length)
+        centres = []
+        for i in range(-1, 2):
+            for j in range(-1, 2):
+                if i==0 and j==0: continue # Miss centre
+                new_centre = centre + i * width_change + j * length_change
+                centres.append(new_centre)
+        for centre in centres:
+            if (max_width>width or max_length>length) or Arma_building.find_suitable_building(width/3.125, length/3.125, building_use) is None:
+                new_width = width*(0.875+random.random()/4)
+                new_length = length*(0.875+random.random()/4)
+                building_class = Arma_building.find_suitable_building(new_width, new_length, building_use)
+                buildings.append((centre, direction_deg, new_width, new_length, road_object.uid, building_use, uid, building_class))
+            else:
+                if is_near_road:
+                    ___, road_object = Road.find_nearest_road(centre, 0)
+                    direction_deg = road_object.get_direction_perp_to_road(centre)
+                split_city_block(width, length, centre, direction_deg, road_object)
+
+    if width > 2*length and building_use == 'city':
+        split_building_to_terrace(width, length, centre, direction_deg)
+    elif building_use == 'city' and (max_width<width or max_length<length) and Arma_building.find_suitable_building(width/3.125, length/3.125, building_use) is not None:
+        split_city_block(width, length, centre, direction_deg, road_object)
+    else:
+        building_class =  Arma_building.find_suitable_building(width, length, building_use)
+        buildings.append((centre, direction_deg, width, length, road_object.uid, building_use, uid, building_class))
+    return buildings
 
 #So does this
 def convert_node_to_arma(object_type, node):
@@ -213,12 +260,13 @@ def convert_buildings(root):
 
     print("Starting multithreading. This may take a while.")
 
-    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids, Arma_building.all_classes, Arma_building.all_classes))
+    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids, Arma_building.sizes, Arma_building.all_classes, Arma_building.max_dimensions))
     progress_bar = Progress_bar("Creating buildings", len(buildings))
     results = process_executor.map(convert_building_to_arma, buildings, chunksize=512)
-    for centre, direction_deg, width, length, road_object_uid, building_use, uid in results:
-        road_object = Road.road_uids[road_object_uid]
-        Building(centre, direction_deg, width, length, road_object, building_use, uid)
+    for buildings in results:
+        for centre, direction_deg, width, length, road_object_uid, building_use, uid, building_class in buildings:
+            road_object = Road.road_uids[road_object_uid]
+            Building(centre, direction_deg, width, length, road_object, building_use, uid, building_class)
         progress_bar.update_progress()
     print("WARNING: The following building types were not exactly matched and have defaulted to residential/commercial: {}".format(Building.uses_not_exactly_matched))
     print("Done converting buildings")
@@ -237,7 +285,7 @@ def convert_node_objects(root):
     memorials = get_value('memorial')
     bus_stops = get_value('bus_stop')
     count = sum([len(x[1]) for x in [trees, bins, benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops]])
-    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids, Arma_building.all_classes, Arma_building.all_classes))
+    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids, Arma_building.sizes, Arma_building.all_classes, Arma_building.max_dimensions))
     progress_bar = Progress_bar("Creating node objects", count)
     for object_type, object_list in (benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops):
         results = process_executor.map(convert_node_to_arma,repeat(object_type), object_list, chunksize=512)
@@ -318,6 +366,12 @@ def debug_draw_image():
             max_y = max(node[1], max_y)
             min_x = min(node[0], min_x)
             min_y = min(node[1], min_y)
+    for node_object in Arma_node_object.all_node_objects:
+        node = node_object.position
+        max_x = max(node[0], max_x)
+        max_y = max(node[1], max_y)
+        min_x = min(node[0], min_x)
+        min_y = min(node[1], min_y)
     diff_x = max_x-min_x
     diff_y = max_y-min_y
     diff = max(diff_x, diff_y)

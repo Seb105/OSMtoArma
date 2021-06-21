@@ -16,6 +16,11 @@ PAVED_ROAD_TYPES =  ["concrete", "paved", "paving_stones", "paved", "asphalt", '
 DIRT_ROAD_TPYES =   ["dirt", "compacted"]
 GRAVEL_ROAD_TYPES = ["pebblestone", "gravel", "unpaved", "unhewn_cobblestone", "cobblestone"]
 
+BUILDING_TYPES_RELIGIOUS = ['place_of_worship', 'cathedral', 'chapel', 'church', 'mosque', 'monastery', 'presbytery', 'religious', 'shrine', 'synagogue', 'temple']
+BUILDING_TYPES_INDUSTRIAL = ['industrial', 'warehouse']
+BUILDING_TYPES_HOUSE = ['yes', 'house', 'apartments', 'detatched','residential', 'terrace']
+BUILDING_TYPES_COMMERCIAL = ['commercial', 'retail', 'cafe', 'restraunt', 'cinema']
+
 class Node:
     """
     A node is a coordinate with a UID. OSM objects may or may not share nodes
@@ -312,33 +317,16 @@ class Building:
     """
     all_buildings = []
     uses_not_exactly_matched = []
-    def __init__(self, centre, direction, width, length, road_object, building_use, uid):
+    def __init__(self, centre, direction, width, length, road_object, building_use, uid, building_class):
         self.uid = uid
         self.centre = centre
         self.direction = direction
         self.width = width
         self.length = length
+        self.building_use = building_use
+        self.arma_class = building_class
         if road_object is not None:
             road_object.buildings.append(self)
-        
-        BUILDING_TYPES_RELIGIOUS = ['place_of_worship', 'cathedral', 'chapel', 'church', 'mosque', 'monastery', 'presbytery', 'religious', 'shrine', 'synagogue', 'temple']
-        BUILDING_TYPES_INDUSTRIAL = ['industrial', 'warehouse']
-        BUILDING_TYPES_HOUSE = ['yes', 'house', 'apartments', 'detatched','residential', 'terrace']
-        BUILDING_TYPES_COMMERCIAL = ['commercial', 'retail', 'cafe', 'restraunt', 'cinema']
-
-        if building_use in BUILDING_TYPES_RELIGIOUS:
-            self.building_use = "religious"
-        elif building_use in BUILDING_TYPES_INDUSTRIAL:
-            self.building_use = 'industrial'
-        elif building_use in BUILDING_TYPES_HOUSE:
-            self.building_use = 'city'
-        elif building_use in BUILDING_TYPES_COMMERCIAL:
-            #TODO: Make unique?
-            self.building_use = 'city'
-        else:
-            self.building_use = 'city'
-            # Warn that this was not matched for later
-            if building_use not in Building.uses_not_exactly_matched: Building.uses_not_exactly_matched.append(building_use)
         
         self.arma_class = Arma_building.find_suitable_building(width, length, self.building_use)
         
@@ -349,3 +337,16 @@ class Building:
 
     def create_arma_objects(self):
         return [self.arma_class, list(self.centre), self.direction]
+
+def match_building_type(building_use):
+        if building_use in BUILDING_TYPES_RELIGIOUS:
+            return "religious"
+        elif building_use in BUILDING_TYPES_INDUSTRIAL:
+            return 'industrial'
+        elif building_use in BUILDING_TYPES_HOUSE:
+            return 'city'
+        elif building_use in BUILDING_TYPES_COMMERCIAL:
+            #TODO: Make unique?
+            return 'city'
+        else:
+            return 'city'
