@@ -20,6 +20,7 @@ EARTH_RADIUS = 6371000
 def init_process(nodes_all, nodes_hash, all_roads, roads_hash, road_uids, all_arma_buildings, all_arma_classes):
     global Node
     global Road
+    global Arma_building
     Node.nodes_all = nodes_all
     Node.nodes_hash = nodes_hash
     Road.all_roads = all_roads

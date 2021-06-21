@@ -69,6 +69,8 @@ class Arma_building:
     """
     sizes = {}
     all_classes = {}
+    max_length = 0
+    max_width = 0
     def __init__(self, arma_class, biome, width, length, height, structure_type):
         size_key = (width, length, biome)
         if size_key in Arma_building.sizes.keys():
@@ -86,8 +88,8 @@ class Arma_building:
             self.structure_type = structure_type
             Arma_building.sizes[size_key] = self
             Arma_building.all_classes[arma_class] = self
-
-            self.variety = 0
+            Arma_building.max_length = max(Arma_building.max_length, length)
+            Arma_building.max_width = max(Arma_building.max_width, width)
     
     @classmethod
     def find_suitable_building(Arma_building, target_width, target_length, desired_type):
@@ -107,11 +109,7 @@ class Arma_building:
         if return_building is None:
             return None
         else:
-            return_class = return_building.arma_classes[return_building.variety]
-            if return_building.variety == len(return_building.arma_classes)-1:
-                return_building.variety = 0
-            else:
-                return_building.variety += 1
+            return_class = return_building.arma_classes[random.randint(0, len(return_building.arma_classes)-1)]
             return return_class
 class Arma_node_object:
     """

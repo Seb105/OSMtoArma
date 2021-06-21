@@ -312,7 +312,7 @@ class Building:
     """
     all_buildings = []
     uses_not_exactly_matched = []
-    def __init__(self, centre, direction, width, length, road_object, building_type, uid):
+    def __init__(self, centre, direction, width, length, road_object, building_use, uid):
         self.uid = uid
         self.centre = centre
         self.direction = direction
@@ -326,21 +326,21 @@ class Building:
         BUILDING_TYPES_HOUSE = ['yes', 'house', 'apartments', 'detatched','residential', 'terrace']
         BUILDING_TYPES_COMMERCIAL = ['commercial', 'retail', 'cafe', 'restraunt', 'cinema']
 
-        if building_type in BUILDING_TYPES_RELIGIOUS:
-            self.building_type = "religious"
-        elif building_type in BUILDING_TYPES_INDUSTRIAL:
-            self.building_type = 'industrial'
-        elif building_type in BUILDING_TYPES_HOUSE:
-            self.building_type = 'city'
-        elif building_type in BUILDING_TYPES_COMMERCIAL:
+        if building_use in BUILDING_TYPES_RELIGIOUS:
+            self.building_use = "religious"
+        elif building_use in BUILDING_TYPES_INDUSTRIAL:
+            self.building_use = 'industrial'
+        elif building_use in BUILDING_TYPES_HOUSE:
+            self.building_use = 'city'
+        elif building_use in BUILDING_TYPES_COMMERCIAL:
             #TODO: Make unique?
-            self.building_type = 'city'
+            self.building_use = 'city'
         else:
-            self.building_type = 'city'
+            self.building_use = 'city'
             # Warn that this was not matched for later
-            if building_type not in Building.uses_not_exactly_matched: Building.uses_not_exactly_matched.append(building_type)
+            if building_use not in Building.uses_not_exactly_matched: Building.uses_not_exactly_matched.append(building_use)
         
-        self.arma_class = Arma_building.find_suitable_building(width, length, self.building_type)
+        self.arma_class = Arma_building.find_suitable_building(width, length, self.building_use)
         
         if self.arma_class != None:
             Building.all_buildings.append(self)
