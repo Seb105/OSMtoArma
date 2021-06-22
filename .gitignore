@@ -4,3 +4,4 @@
 output.sqf
 *.png
 *.pyc
+output/fn_buildScript.sqf
