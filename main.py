@@ -37,11 +37,15 @@ def convert_building_to_arma(building):
         nodes = [Node.nodes_hash[node.attrib['ref']] for node in building.findall("nd")]
     elif building.find(".//*[@role='outer']") is not None:
         outerRefs = building.findall(".//*[@role='outer']")
+        nodes = []
         for outerRef in outerRefs:
             outerID = outerRef.attrib['ref']
             outerObject = root.find(".//*[@id='{}']".format(outerID)) 
-            if outerObject is not None: break
-        nodes = [Node.nodes_hash[node.attrib['ref']] for node in outerObject.findall("nd")]
+            if outerObject is None: continue
+            nodes.extend([Node.nodes_hash[node.attrib['ref']] for node in outerObject.findall("nd")])
+    if len(nodes) == 0:
+        print("\nWARNING: Building {} had no nodes? OSM bug probably \n".format(uid))
+        return [] # OSM glitch where refernced way doesn't exist?
     building_type = get_sub_object_attrib(building, 'building')
     building_street = get_sub_object_attrib(building, 'addr:street', 'none')
     building_amenity =  get_sub_object_attrib(building, 'amenity', 'none')
@@ -60,6 +64,9 @@ def convert_building_to_arma(building):
     min_y = mins[1]
     diff_x = max_x - min_x
     diff_y = max_y - min_y
+    if diff_x == 0 or diff_y == 0:
+        print("\nWARNING: Building {} was flat\n".format(uid))
+        return [] # Fix infinite loop due to terracing.
     centreX = (min_x + max_x)/2
     centreY = (min_y + max_y)/2
     centre = np.asarray([centreX, centreY])
@@ -447,7 +454,7 @@ def debug_draw_image():
 def main():
     start_time = time.time()
     # Default blacklistable: ['middle_east', 'mediterranean', 'misc', 'asia_modern', 'east_europe]
-    define_arma_buildings(biome_blacklist=['middle_east', 'mediterranean', 'misc', 'asia_modern'])
+    define_arma_buildings(biome_blacklist=['middle_east', 'misc', 'asia_modern', 'east_europe'])
     define_roads()
     define_barriers()
     convert_nodes(root)
