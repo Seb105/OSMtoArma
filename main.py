@@ -1,6 +1,5 @@
-from threading import Thread, ThreadError
 import xml.etree.ElementTree as ET
-from math import degrees, radians, sin, sqrt, cos, inf
+from math import degrees, radians, sin, cos, inf
 from statistics import mean
 import time
 import numpy as np
@@ -10,13 +9,14 @@ import random
 from arma_object_classes import Arma_barrier, Arma_building, Arma_node_object, define_roads, define_barriers
 from OSM_object_classes import Road, Node, Building, Barrier, match_building_type
 from arma_to_osm_helpers import Progress_bar, pol2cart
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
 random.seed(1)
 tree = ET.parse(r'xml\map.osm.xml')
 root = tree.getroot()
 EARTH_RADIUS = 6371000
 
+# Clone all the classes for new process threads
 def init_process(nodes_all, nodes_hash, all_roads, roads_hash, road_uids, all_arma_sizes, all_arma_classes, building_max_dimensions):
     global Node
     global Road
@@ -51,6 +51,7 @@ def convert_building_to_arma(building):
         building_use = building_type
     building_use  = match_building_type(building_use)
     nodes_coords = [node.coords for node in nodes]
+    # Get extents of building
     maxes = np.max(nodes_coords, 0)
     mins = np.min(nodes_coords, 0)
     max_x = maxes[0]
@@ -77,7 +78,7 @@ def convert_building_to_arma(building):
     if distance <= close_enough_distance:
         is_near_road = True
         direction_deg = road_object.get_direction_perp_to_road(centre)
-        # TODO: make face road
+        # TODO: make face road. Right now will always face easterly.
     else:
         # Average the angles of all nodes that make up this building, return between 0-45 degrees.
         angles = []
@@ -129,10 +130,10 @@ def convert_building_to_arma(building):
             if is_near_road:
                 ___, road_object = Road.find_nearest_road(centre, 0)
                 direction_deg_new = road_object.get_direction_perp_to_road(centre)
-            if not (45<direction_deg<135 or 315>direction_deg>225) and (45<direction_deg_new<135 or 315>direction_deg_new>225):
-                a,b = width, length
-                width, length = b, a
-            direction_deg = direction_deg_new
+                if not (45<direction_deg<135 or 315>direction_deg>225) and (45<direction_deg_new<135 or 315>direction_deg_new>225):
+                    a,b = width, length
+                    width, length = b, a
+                direction_deg = direction_deg_new
             random_width = width * (0.835 + random.random()/3) 
             random_length = length * (0.835 + random.random()/3) 
             if (max_width>width or max_length>length) or Arma_building.find_suitable_building(width/3.125, length/3.125, building_use) is None:
@@ -140,7 +141,8 @@ def convert_building_to_arma(building):
                 buildings.append((centre, direction_deg, random_width, random_length, road_object.uid, building_use, uid, building_class))
             else:
                 split_city_block(random_width, random_length, centre, direction_deg, road_object)
-
+    # If very wide building, rescursively split it into multiple buildings.
+    # If a huge square building, recursively split it into 8 buildings (not including a centre)
     if width > 2*length and building_use == 'city':
         split_building_to_terrace(width, length, centre, direction_deg)
     elif building_use == 'city' and (max_width<width or max_length<length) and Arma_building.find_suitable_building(width/3.125, length/3.125, building_use) is not None:
@@ -150,7 +152,7 @@ def convert_building_to_arma(building):
         buildings.append((centre, direction_deg, width, length, road_object.uid, building_use, uid, building_class))
     return buildings
 
-#So does this
+# Needs to be in global namespace for threading reasons
 def convert_node_to_arma(object_type, node):
     node_id = node.attrib['id']
     if node_id in Node.nodes_hash.keys():
@@ -161,6 +163,7 @@ def convert_node_to_arma(object_type, node):
     direction = road.get_direction_perp_to_road(node_coords)
     return node_coords, direction, object_type
 
+# Convert exported buildings from Arma to classes matchable to OSM building
 def define_arma_buildings(path=r"input_data\armaObjects.txt", biome_blacklist=[]):
     print("Converting arma buildings to classes")
     i = 0
@@ -176,6 +179,7 @@ def define_arma_buildings(path=r"input_data\armaObjects.txt", biome_blacklist=[]
             Arma_building(arma_class, structure_biome, width, length, height, structure_type)
     print("Converted {} buildings to arma type".format(i))
 
+# OSM XML lines come in key:values rather than tag:vakue, so each will have an attribute 'k' and attribute 'v', tag is property.
 def get_sub_object_attrib(instance, attrib, default_value = "NOT_FOUND"):
     sub = instance.find(".//*[@k='{}']".format(attrib))
     if sub is not None:
@@ -264,7 +268,7 @@ def convert_buildings(root):
 
     print("Starting multithreading. This may take a while.")
 
-    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids, Arma_building.sizes, Arma_building.all_classes, Arma_building.max_dimensions))
+    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids, Arma_building.sizes, Arma_building.all_classes, Arma_building.max_dimensions), max_workers=8)
     progress_bar = Progress_bar("Creating buildings", len(buildings))
     results = process_executor.map(convert_building_to_arma, buildings, chunksize=512)
     for buildings in results:
@@ -275,6 +279,7 @@ def convert_buildings(root):
     print("WARNING: The following building types were not exactly matched and have defaulted to residential/commercial: {}".format(Building.uses_not_exactly_matched))
     print("Done converting buildings")
 
+# Converts single point objects, such as trees, benches etc to arma objects.
 def convert_node_objects(root):
     print("Converting point objects")
     def get_value(value):
@@ -289,7 +294,7 @@ def convert_node_objects(root):
     memorials = get_value('memorial')
     bus_stops = get_value('bus_stop')
     count = sum([len(x[1]) for x in [trees, bins, benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops]])
-    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids, Arma_building.sizes, Arma_building.all_classes, Arma_building.max_dimensions))
+    process_executor = ProcessPoolExecutor(initializer=init_process, initargs=(Node.nodes_all, Node.nodes_hash, Road.all_roads, Road.roads_hash, Road.road_uids, Arma_building.sizes, Arma_building.all_classes, Arma_building.max_dimensions), max_workers=8)
     progress_bar = Progress_bar("Creating node objects", count)
     for object_type, object_list in (benches, telephones, post_boxes, automated_teller_machines, statues, memorials, bus_stops):
         results = process_executor.map(convert_node_to_arma,repeat(object_type), object_list, chunksize=512)
@@ -308,6 +313,7 @@ def convert_node_objects(root):
             progress_bar.update_progress()
     print("Done converting point objects")
 
+# Convert fences, walls to arma objects.
 def convert_barriers(root):
     ways = root.findall('way')
     barriers = [way for way in ways if way.find(".//*[@k='barrier']") is not None]
@@ -323,26 +329,34 @@ def convert_barriers(root):
             if barrier_type not in barriers_not_processed: barriers_not_processed.append(barrier_type)
     print("WARNING: The following barrier types are not processed: {}".format(barriers_not_processed))
 
+# Write output file.
 def output_all_to_arma_array():
     print("Writing output")
     buildArray = []
+    count = sum([len(x) for x in (Road.all_roads, Building.all_buildings, Arma_node_object.all_node_objects, Barrier.all_barriers)])
+    progress_bar = Progress_bar("Writing output", count)
     for road in Road.all_roads:
         buildArray.extend(road.create_arma_objects())
+        progress_bar.update_progress()
     for road_search, road_identifier in Road.unmatched_road_pairs:
         print("WARNING: Arma Road {} could not be found. Defaulted to {}".format(road_search, road_identifier))
     for building in Building.all_buildings:
         buildArray.append(building.create_arma_objects())
+        progress_bar.update_progress()
     for thing in Arma_node_object.all_node_objects:
         buildArray.append(thing.create_arma_objects())
+        progress_bar.update_progress()
     for barrier in Barrier.all_barriers:
         buildArray.extend(barrier.create_arma_objects())
+        progress_bar.update_progress()
     with open(r"input_data\fn_createCity.sqf") as c:
         script = c.readlines()
-    with open("output.sqf", 'w') as f:
+    with open(r"output\fn_buildScript.sqf", 'w') as f:
         f.truncate()
         f.writelines([line.replace("[THE_BUILD_ARRAY]", str(buildArray)) for line in script])
     print("Done writing output")
-    
+
+# From created properties draw a debug file.
 def debug_draw_image():
     print("Drawing preview")
     resolution = 16000
@@ -427,12 +441,13 @@ def debug_draw_image():
         nodes =  barrier.all_nodes_as_coords()
         as_tuples = tuple([tuple(to_pixels(node)) for node in nodes])
         draw.line(as_tuples, fill='brown', width=2)
-    img.save("output.png")
+    img.save(r"output\preview.png")
     print("Done drawing preview")
 
 def main():
     start_time = time.time()
-    define_arma_buildings(biome_blacklist=['middle_east', 'mediterranean', 'misc'])
+    # Default blacklistable: ['middle_east', 'mediterranean', 'misc', 'asia_modern', 'east_europe]
+    define_arma_buildings(biome_blacklist=['middle_east', 'mediterranean', 'misc', 'asia_modern'])
     define_roads()
     define_barriers()
     convert_nodes(root)

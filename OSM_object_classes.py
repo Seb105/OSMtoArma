@@ -113,7 +113,7 @@ class Road:
         """
         This function returns the angle perpendicular to the tangent of the closest road section of the given coordinates. Used for aligning a property to the road.
 
-        TODO: Make it so the house faces the road, right now it only faces N/E
+        TODO: Make it so the house faces the road, right now it only faces N/E. Atan2, normalise to 0-360 where 0 = NORTH. Then if > 180, add 180 to output?
         """
         # Find direction of two closest road points
         nodes = self.all_nodes_as_coords()
@@ -188,7 +188,8 @@ class Road:
         for node_set in node_sets:
             start = node_set[:2]
             end = np.flip(node_set[-2:], axis=0)
-            caps = [start, end]
+            # TODO: reimplement this
+            # caps = [start, end]
             # There is a special road piece for the start and end of segments. Find and place it.
             # for cap in caps:
             #     diff = cap[0] - cap[1]
@@ -209,6 +210,7 @@ class Road:
                 angle_deg = 90 - degrees(angle_rad)
 
                 # Corner pieces between segments. As this requires knowledge of the previous node, do not do the first node.
+                # TODO: reimplement this
                 # if i > 0:
                 #     prev_node = node_set[i-1]
                 #     prev_diff = node - prev_node
@@ -313,7 +315,7 @@ class Building:
     """
     A building is an extracted OSM building object.
     
-    It can be matched to an Arma_building using the match method from Arma_building.
+    It can be matched to an Arma_building using the class method from Arma_building.
     """
     all_buildings = []
     uses_not_exactly_matched = []

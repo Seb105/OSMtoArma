@@ -1,7 +1,7 @@
 import random
 from arma_to_osm_helpers import nearest_value
 
-# Single node lookup table
+# Single node lookup table. If a list then the values will be selected at random.
 NODE_OBJECT_TYPES = {
     'tree' : ["CUP_les_dub", "CUP_les_dub_jiny", "CUP_t_quercus2f_summer", "CUP_t_betula2f_summer", "CUP_t_betula2s_summer"],
     'bench' : "Land_Bench_01_F",
@@ -14,7 +14,7 @@ NODE_OBJECT_TYPES = {
     "bus_stop" : "Land_BusStop_01_shelter_F"
 }
 
-#Woods objets
+# Woods objets
 WOODS_OBJECT_TYPES = [
     "CUP_les_dub",
     "CUP_les_dub_jiny",
@@ -33,7 +33,7 @@ class Arma_road:
     """
     An arma road is a collection of arma road segment classes with some identifying properties such as segment length, turning radius and turning angle, 
     
-    These segments may be used to convert an OSM way into arma classes.
+    These segments may be used to convert an OSM way into arma objects.
     """
     arma_road_match = {}
     def __init__(self, road_surfaces, road_types, straights, curves, end, placeAtCentre=False):
@@ -63,7 +63,7 @@ class Arma_road:
 
 class Arma_building:
     """
-    An Arma building is the class representation of an actual arma building class.
+    An Arma building is the representation of an actual arma building object, such as "Land_house_f..."
 
     It contains the data of that building such as width, length and height so that it may be matched to an OSM building.
     """
@@ -90,6 +90,7 @@ class Arma_building:
             if structure_type == 'city':
                 Arma_building.max_dimensions = (max(Arma_building.max_dimensions[0], width), max(Arma_building.max_dimensions[1], length))
     
+    # Given an OSM buildings width, length, and type, attempt to match it to an arma building
     @classmethod
     def find_suitable_building(Arma_building, target_width, target_length, desired_type):
         accuracy = 0
@@ -140,6 +141,8 @@ class Arma_barrier:
         Arma_barrier.arma_barrier_match[barrier_type] = self
 
 def define_roads():
+    # For straight sections, the key is the length.
+    # For curved sections, the key is the turn in degrees. The second number is the radius of curvature.
     paved_primary = Arma_road('paved', ('primary', 'residential'), {
         6: "CUP_A2_Road_asf1_6",
         12 : "CUP_A2_Road_asf1_12",
