@@ -12,7 +12,7 @@ from arma_to_osm_helpers import Progress_bar, pol2cart
 from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
 random.seed(1)
-tree = ET.parse(r'xml\map.osm.xml')
+tree = ET.parse(r'xml/map.osm.xml')
 root = tree.getroot()
 EARTH_RADIUS = 6371000
 
@@ -454,7 +454,7 @@ def debug_draw_image():
 def main():
     start_time = time.time()
     # Default blacklistable: ['middle_east', 'mediterranean', 'misc', 'asia_modern', 'east_europe]
-    define_arma_buildings(biome_blacklist=['middle_east', 'misc', 'asia_modern', 'east_europe'])
+    define_arma_buildings(biome_blacklist=['mediterranean', 'middle_east', 'misc', 'asia_modern'])
     define_roads()
     define_barriers()
     convert_nodes(root)

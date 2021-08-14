@@ -27,7 +27,7 @@ You may edit the arguments of the function ```define_arma_buildings``` in main()
     - (Altis/Malden)
 - 'asia_modern' 
     - (Tanoa)
-- 'eastern_europe'
+- 'east_europe'
     - (Chernarus, etc)
 - 'middle_east'
     - (Takistan/Zargabad)
