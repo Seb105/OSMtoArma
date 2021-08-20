@@ -171,7 +171,7 @@ def convert_node_to_arma(object_type, node):
     return node_coords, direction, object_type
 
 # Convert exported buildings from Arma to classes matchable to OSM building
-def define_arma_buildings(path=r"input_data\armaObjects.txt", biome_blacklist=[]):
+def define_arma_buildings(path=r"input_data/armaObjects.txt", biome_blacklist=[]):
     print("Converting arma buildings to classes")
     i = 0
     with open(path, 'r') as f:
@@ -356,9 +356,9 @@ def output_all_to_arma_array():
     for barrier in Barrier.all_barriers:
         buildArray.extend(barrier.create_arma_objects())
         progress_bar.update_progress()
-    with open(r"input_data\fn_createCity.sqf") as c:
+    with open(r"input_data/fn_createCity.sqf") as c:
         script = c.readlines()
-    with open(r"output\fn_buildScript.sqf", 'w') as f:
+    with open(r"output/fn_buildScript.sqf", 'w') as f:
         f.truncate()
         f.writelines([line.replace("[THE_BUILD_ARRAY]", str(buildArray)) for line in script])
     print("Done writing output")
@@ -448,7 +448,7 @@ def debug_draw_image():
         nodes =  barrier.all_nodes_as_coords()
         as_tuples = tuple([tuple(to_pixels(node)) for node in nodes])
         draw.line(as_tuples, fill='brown', width=2)
-    img.save(r"output\preview.png")
+    img.save(r"output/preview.png")
     print("Done drawing preview")
 
 def main():

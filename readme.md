@@ -18,11 +18,11 @@ Vladivostok:
 
 # Basic usage:
 
-Place an exported OSM file into the ```xml``` directory with the name ```map.osm.xml``` and run main.py. Use the file ```output\fn_buildScript.sqf``` in-game to create your map.
+Place an exported OSM file into the ```xml``` directory with the name ```map.osm.xml``` and run main.py. Use the file ```output/fn_buildScript.sqf``` in-game to create your map.
 
 ### Choosing map theme
 
-You may edit the arguments of the function ```define_arma_buildings``` in main() in order to choose the biome. Default biomes in ```input_data\armaObjects.txt``` are:
+You may edit the arguments of the function ```define_arma_buildings``` in main() in order to choose the biome. Default biomes in ```input_data/armaObjects.txt``` are:
 - 'mediterranean'
     - (Altis/Malden)
 - 'asia_modern' 
@@ -43,7 +43,7 @@ For example, if you wanted a purely Mediterranean themed map your call would loo
 
 ### Defining custom objects
 
-You may add your own buildings to the build script. ```input_data\armaObjects.txt``` is parsed every time main.py is run. The format is a list of lists with the following format:
+You may add your own buildings to the build script. ```input_data/armaObjects.txt``` is parsed every time main.py is run. The format is a list of lists with the following format:
 ```
 [
     [
@@ -73,7 +73,7 @@ You may add your own buildings to the build script. ```input_data\armaObjects.tx
     ]
 ]
 ```
-Check out ```tools\fn_getObjects.sqf``` to see how the basic armaObjects.txt is built, as the clipboard result of that function makes up the txt file.
+Check out ```tools/fn_getObjects.sqf``` to see how the basic armaObjects.txt is built, as the clipboard result of that function makes up the txt file.
 ## Contributing
 
 I welcome all contributions. The code is a labrynthine mess... so have fun!
